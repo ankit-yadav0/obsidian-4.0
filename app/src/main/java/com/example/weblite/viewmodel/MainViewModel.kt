@@ -109,6 +109,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun onAdultContentBlocked(host: String) {
         _adultSitesBlockedCount.value += 1
+        logBlockedEvent(host, "Adult content")
     }
 
     // --- Sites that hand off to an external browser instead of loading in-app ---
@@ -166,6 +167,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         tabs.firstOrNull { it.id == id }?.isShieldOff ?: false
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
 
+    val activeTabIsIncognito: StateFlow<Boolean> = combine(
+        _tabs, _activeTabId
+    ) { tabs, id ->
+        tabs.firstOrNull { it.id == id }?.isIncognito ?: false
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
+
     /** True when no tab is open — shows the URL-entry home screen. */
     val showHomeScreen: StateFlow<Boolean> = _activeTabId
         .map { it == null }
@@ -202,6 +209,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         _hasLoadedContentSuccessfully.value = false
         _errorMessage.value = null
         _isOffline.value = false
+
+        // Incognito: while an incognito tab is the active one, stop the
+        // shared WebView from accepting/storing any new cookies at all.
+        // This app only has a single shared WebView (not one per tab), so
+        // this global toggle is the most honest thing "incognito" can mean
+        // here - it can't give a separate cookie jar per tab.
+        android.webkit.CookieManager.getInstance().setAcceptCookie(!tab.isIncognito)
     }
 
     fun closeTab(id: String) {
@@ -331,8 +345,23 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val _trackersBlockedCount = MutableStateFlow(0)
     val trackersBlockedCount: StateFlow<Int> = _trackersBlockedCount.asStateFlow()
 
-    fun onTrackerBlocked() {
+    // Per-event log backing the Privacy Dashboard - a raw count on its own
+    // isn't verifiable proof of anything, so this keeps the actual host +
+    // category + time for each block, newest first, capped so it can't
+    // grow unbounded over a long session.
+    data class BlockedEvent(val host: String, val category: String, val timestampMillis: Long)
+
+    private val _blockedEvents = MutableStateFlow<List<BlockedEvent>>(emptyList())
+    val blockedEvents: StateFlow<List<BlockedEvent>> = _blockedEvents.asStateFlow()
+
+    private fun logBlockedEvent(host: String, category: String) {
+        val entry = BlockedEvent(host.ifBlank { "(unknown)" }, category, System.currentTimeMillis())
+        _blockedEvents.value = (listOf(entry) + _blockedEvents.value).take(200)
+    }
+
+    fun onTrackerBlocked(host: String = "") {
         _trackersBlockedCount.value += 1
+        logBlockedEvent(host, "Ad / Tracker")
     }
 
     init {

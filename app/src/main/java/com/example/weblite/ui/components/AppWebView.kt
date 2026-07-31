@@ -99,7 +99,7 @@ fun AppWebView(
     onHideCustomView: () -> Unit,
     onWebViewCreated: (WebView) -> Unit,
     onDownloadRequested: (url: String, fileName: String, mimeType: String, userAgent: String?, cookie: String?) -> Unit,
-    onTrackerBlocked: () -> Unit,
+    onTrackerBlocked: (String) -> Unit,
     isAdultContentHost: (String) -> Boolean,
     onAdultContentBlocked: (String) -> Unit,
     shouldOpenExternally: (String) -> Boolean,
@@ -262,6 +262,42 @@ fun AppWebView(
                         try {
                             Object.defineProperty(navigator, 'deviceMemory', { get: function() { return 4; } });
                         } catch (e) {}
+
+                        // YouTube ad skipping: YouTube serves video ads from
+                        // the same domain/CDN as the video itself, so no
+                        // domain-based blocklist can catch them (this is
+                        // deliberate on Google's part, to defeat exactly
+                        // that kind of ad blocker). The only thing that
+                        // actually works is watching the player for its
+                        // "an ad is showing" state and skipping/fast-
+                        // forwarding through it — same technique real
+                        // YouTube-ad-blocker extensions use. It's a running
+                        // arms race: YouTube can change this DOM/class
+                        // structure at any time and break it.
+                        if (location.hostname.indexOf('youtube.com') !== -1 || location.hostname.indexOf('youtu.be') !== -1) {
+                            setInterval(function() {
+                                try {
+                                    var player = document.querySelector('.html5-video-player');
+                                    var isAd = player && (
+                                        player.classList.contains('ad-showing') ||
+                                        player.classList.contains('ad-interrupting')
+                                    );
+                                    if (isAd) {
+                                        var video = document.querySelector('video');
+                                        if (video && !isNaN(video.duration)) {
+                                            video.muted = true;
+                                            video.currentTime = video.duration;
+                                        }
+                                        var skipBtn = document.querySelector(
+                                            '.ytp-ad-skip-button, .ytp-ad-skip-button-modern, .ytp-skip-ad-button'
+                                        );
+                                        if (skipBtn) skipBtn.click();
+                                        var overlayClose = document.querySelector('.ytp-ad-overlay-close-button');
+                                        if (overlayClose) overlayClose.click();
+                                    }
+                                } catch (e) {}
+                            }, 300);
+                        }
                     })();
                     """.trimIndent(),
                     setOf("*")
@@ -399,7 +435,7 @@ fun AppWebView(
                             urlString.contains("/pagead/") ||
                             urlString.contains("googleanalytics")
                         )) {
-                            onTrackerBlocked()
+                            onTrackerBlocked(host)
                             return WebResourceResponse("text/plain", "UTF-8", ByteArrayInputStream(ByteArray(0)))
                         }
 
@@ -472,7 +508,7 @@ fun AppWebView(
                         // being auto-launched in an external browser. Block
                         // these outright instead of leaving the app.
                         if (!shieldOffState.value && AD_TRACKER_HOSTS.any { host.contains(it) }) {
-                            onTrackerBlocked()
+                            onTrackerBlocked(host)
                             return true // swallow navigation, stay put
                         }
 
@@ -564,7 +600,7 @@ fun AppWebView(
                         isUserGesture: Boolean,
                         resultMsg: android.os.Message?
                     ): Boolean {
-                        onTrackerBlocked()
+                        onTrackerBlocked("(popup)")
                         return false
                     }
 

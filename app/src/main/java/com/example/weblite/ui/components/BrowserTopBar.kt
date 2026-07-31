@@ -23,6 +23,7 @@ import androidx.compose.material.icons.filled.OpenInBrowser
 import androidx.compose.material.icons.filled.RemoveModerator
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.StarBorder
+import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.OutlinedTextField
@@ -51,6 +52,7 @@ fun BrowserTopBar(
     isHttps: Boolean,
     adultBlockEnabled: Boolean,
     isAlwaysExternal: Boolean,
+    isIncognito: Boolean,
     onNavigate: (String) -> Unit,
     onToggleShield: () -> Unit,
     onToggleBookmark: () -> Unit,
@@ -70,10 +72,20 @@ fun BrowserTopBar(
     Row(
         modifier = modifier
             .fillMaxWidth()
-            .background(Color(0xFF14151F))
+            .background(if (isIncognito) Color(0xFF2B1B3D) else Color(0xFF14151F))
             .padding(horizontal = 8.dp, vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
+        if (isIncognito) {
+            Icon(
+                imageVector = Icons.Default.VisibilityOff,
+                contentDescription = "Incognito tab active",
+                tint = Color(0xFFCE93D8),
+                modifier = Modifier.size(20.dp)
+            )
+            Spacer(modifier = Modifier.width(6.dp))
+        }
+
         IconButton(onClick = onToggleShield) {
             Icon(
                 imageVector = if (isShieldOff) Icons.Default.GppMaybe else Icons.Default.GppGood,

@@ -164,6 +164,10 @@ class MainActivity : ComponentActivity() {
         val showHomeScreen by viewModel.showHomeScreen.collectAsState()
         val allowedDomain by viewModel.activeAllowedDomain.collectAsState()
         val activeTabIsShieldOff by viewModel.activeTabIsShieldOff.collectAsState()
+        val activeTabIsIncognito by viewModel.activeTabIsIncognito.collectAsState()
+        val blockedEvents by viewModel.blockedEvents.collectAsState()
+        val adultSitesBlockedCount by viewModel.adultSitesBlockedCount.collectAsState()
+        var showPrivacyDashboard by remember { mutableStateOf(false) }
         val hiddenTabsUnlocked by viewModel.hiddenTabsUnlocked.collectAsState()
         val trackersBlockedCount by viewModel.trackersBlockedCount.collectAsState()
         val bookmarks by viewModel.bookmarks.collectAsState()
@@ -244,6 +248,7 @@ class MainActivity : ComponentActivity() {
                 isOrbotInstalled = viewModel.isOrbotInstalled(),
                 onOpenUrl = { url -> viewModel.openNewTab(url) },
                 onOpenIncognito = { url -> viewModel.openNewTab(url, incognito = true) },
+                onOpenPrivacyDashboard = { showPrivacyDashboard = true },
                 onOpenBookmark = { url -> viewModel.openNewTab(url) },
                 onDeleteBookmark = { url -> viewModel.removeBookmark(url) },
                 onToggleTor = { enabled -> viewModel.toggleTor(enabled) },
@@ -279,6 +284,7 @@ class MainActivity : ComponentActivity() {
                             isHttps = currentUrl.startsWith("https://"),
                             adultBlockEnabled = adultBlockEnabled,
                             isAlwaysExternal = isAlwaysExternal,
+                            isIncognito = activeTabIsIncognito,
                             onNavigate = { input -> viewModel.navigateActiveTab(input) },
                             onToggleShield = { viewModel.toggleShieldForActiveTab() },
                             onToggleBookmark = {
@@ -434,7 +440,7 @@ class MainActivity : ComponentActivity() {
                             onDownloadRequested = { url, fileName, mimeType, userAgent, cookie ->
                                 viewModel.startDownload(url, fileName, mimeType, userAgent, cookie)
                             },
-                            onTrackerBlocked = { viewModel.onTrackerBlocked() },
+                            onTrackerBlocked = { host -> viewModel.onTrackerBlocked(host) },
                             isAdultContentHost = { host -> viewModel.isAdultContentHost(host) },
                             onAdultContentBlocked = { host -> viewModel.onAdultContentBlocked(host) },
                             shouldOpenExternally = { host -> viewModel.shouldOpenExternally(host) },
@@ -522,6 +528,17 @@ class MainActivity : ComponentActivity() {
                     onDismiss = { viewModel.toggleDownloadsSheet(false) },
                     onDelete = { item -> viewModel.deleteDownload(item) },
                     onRetry = { item -> viewModel.retryDownload(item) }
+                )
+
+                // Privacy Dashboard - proof of what's actually being blocked
+                PrivacyDashboardSheet(
+                    isVisible = showPrivacyDashboard,
+                    trackersBlockedCount = trackersBlockedCount,
+                    adultSitesBlockedCount = adultSitesBlockedCount,
+                    isProtonVpnActive = protonVpnActive,
+                    isIncognitoActive = activeTabIsIncognito,
+                    events = blockedEvents,
+                    onDismiss = { showPrivacyDashboard = false }
                 )
             }
         }

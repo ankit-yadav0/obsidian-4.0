@@ -63,6 +63,7 @@ fun HomeScreen(
     isOrbotInstalled: Boolean,
     onOpenUrl: (String) -> Unit,
     onOpenIncognito: (String) -> Unit,
+    onOpenPrivacyDashboard: () -> Unit,
     onOpenBookmark: (String) -> Unit,
     onDeleteBookmark: (String) -> Unit,
     onToggleTor: (Boolean) -> Unit,
@@ -107,7 +108,10 @@ fun HomeScreen(
 
         if (trackersBlockedCount > 0) {
             Spacer(Modifier.height(6.dp))
-            Row(verticalAlignment = Alignment.CenterVertically) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.clickable { onOpenPrivacyDashboard() }
+            ) {
                 Icon(
                     Icons.Default.Lock,
                     contentDescription = null,
@@ -117,7 +121,7 @@ fun HomeScreen(
                         .padding(end = 4.dp)
                 )
                 Text(
-                    text = "$trackersBlockedCount ads/trackers blocked this session",
+                    text = "$trackersBlockedCount ads/trackers blocked this session — tap to see details",
                     color = Color(0xFF4CAF50),
                     fontSize = 12.sp
                 )
