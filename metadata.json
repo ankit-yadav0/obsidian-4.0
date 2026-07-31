@@ -1,0 +1,6 @@
+{
+  "name": "CineHD",
+  "description": "High-performance streaming & movie companion app for CineHD, optimized for low-memory Android Go devices with fast WebView caching and smooth playback.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

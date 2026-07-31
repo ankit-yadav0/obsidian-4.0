@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- Angular shield / helmet badge -->
+    <path android:pathData="M84,54 L69,80 L39,80 L24,54 L39,28 L69,28 Z">
+        <aapt:attr name="android:fillColor">
+            <gradient
+                android:startX="24"
+                android:startY="28"
+                android:endX="84"
+                android:endY="80"
+                android:type="linear">
+                <item android:color="#2A0B12" android:offset="0.0" />
+                <item android:color="#0A0508" android:offset="1.0" />
+            </gradient>
+        </aapt:attr>
+    </path>
+
+    <!-- Thin glowing outline -->
+    <path
+        android:pathData="M84,54 L69,80 L39,80 L24,54 L39,28 L69,28 Z"
+        android:strokeColor="#E50914"
+        android:strokeWidth="2.2"
+        android:fillColor="#00000000" />
+
+    <!-- Soft glow behind the visor slit -->
+    <path
+        android:pathData="M38,54 L70,54"
+        android:strokeColor="#40E50914"
+        android:strokeWidth="18"
+        android:strokeLineCap="round"
+        android:fillColor="#00000000" />
+
+    <!-- Bright visor slit (the "eye") -->
+    <path
+        android:pathData="M40,54 L68,54"
+        android:strokeColor="#FFE9E2"
+        android:strokeWidth="7"
+        android:strokeLineCap="round"
+        android:fillColor="#00000000" />
+    <path
+        android:pathData="M42,54 L66,54"
+        android:strokeColor="#E50914"
+        android:strokeWidth="3.5"
+        android:strokeLineCap="round"
+        android:fillColor="#00000000" />
+</vector>

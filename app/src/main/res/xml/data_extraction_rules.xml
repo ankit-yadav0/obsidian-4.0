@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?><!--
+   Sample data extraction rules file; uncomment and customize as necessary.
+   See https://developer.android.com/about/versions/12/backup-restore#xml-changes
+   for details.
+-->
+<data-extraction-rules>
+    <cloud-backup>
+        <!-- Privacy: never let the PIN hash or WebView browsing data
+             (cookies, cache, form data) leave the device via cloud backup.
+             Download history in the Room database is not sensitive and is
+             still backed up normally. -->
+        <exclude domain="sharedpref" path="weblite_pin_prefs.xml" />
+        <exclude domain="file" path="." />
+    </cloud-backup>
+</data-extraction-rules>
