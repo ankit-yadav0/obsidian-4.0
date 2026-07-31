@@ -171,13 +171,34 @@ fun AppWebView(
 
                 // Standard modern User-Agent identifier
                 userAgentString = userAgentString.replace("; wv", "")
+                // The exact device model + build ID (e.g. "SM-G998B Build/UP1A...")
+                // is close to a unique fingerprint on its own. Generalize it away.
+                userAgentString = userAgentString.replace(Regex(";\\s*[^;]+ Build/[^;)]+"), "; K")
+
+                // Privacy: stop Android's system Autofill framework (often
+                // backed by Google's Autofill service) from seeing what's
+                // typed into page form fields.
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    importantForAutofill = View.IMPORTANT_FOR_AUTOFILL_NO
+                }
             }
 
-            // Privacy: block WebRTC's IP-discovery APIs. Even with a VPN
-            // active, a site's JavaScript can otherwise use RTCPeerConnection
-            // to ask a STUN server for your real network IP, bypassing the
-            // VPN tunnel entirely. This runs before any page script, on
-            // every frame, so it can't be undone by the page.
+            // Privacy: block WebRTC's IP-discovery APIs, and reduce the
+            // browser's fingerprint surface so sites are less able to
+            // re-identify this device across visits even without cookies.
+            // Runs before any page script, on every frame, so it can't be
+            // undone by the page.
+            //
+            // Canvas/WebGL/AudioContext noise: same technique used by
+            // Brave/Tor Browser — a tiny, page-load-random amount of noise
+            // is added to pixel/audio readouts. It's small enough to be
+            // invisible to a human looking at the page, but changes the
+            // exact bytes a fingerprinting script reads, so the same
+            // device produces a different "fingerprint" every page load
+            // instead of one stable value trackers can follow you by.
+            // Trade-off, disclosed here: any site that legitimately reads
+            // back canvas/audio data pixel-for-pixel (rare) will see
+            // slightly altered values.
             if (androidx.webkit.WebViewFeature.isFeatureSupported(androidx.webkit.WebViewFeature.DOCUMENT_START_SCRIPT)) {
                 androidx.webkit.WebViewCompat.addDocumentStartJavaScript(
                     this,
@@ -188,6 +209,58 @@ fun AppWebView(
                             Object.defineProperty(window, 'RTCPeerConnection', { get: block, set: function(){} });
                             Object.defineProperty(window, 'webkitRTCPeerConnection', { get: block, set: function(){} });
                             Object.defineProperty(window, 'RTCDataChannel', { get: block, set: function(){} });
+                        } catch (e) {}
+
+                        try {
+                            var origToDataURL = HTMLCanvasElement.prototype.toDataURL;
+                            HTMLCanvasElement.prototype.toDataURL = function() {
+                                try {
+                                    var ctx = this.getContext('2d');
+                                    if (ctx) {
+                                        var d = ctx.getImageData(0, 0, this.width, this.height);
+                                        for (var i = 0; i < d.data.length; i += 4) {
+                                            d.data[i] = d.data[i] ^ (Math.random() < 0.5 ? 0 : 1);
+                                        }
+                                        ctx.putImageData(d, 0, 0);
+                                    }
+                                } catch (e) {}
+                                return origToDataURL.apply(this, arguments);
+                            };
+                            var origGetImageData = CanvasRenderingContext2D.prototype.getImageData;
+                            CanvasRenderingContext2D.prototype.getImageData = function() {
+                                var d = origGetImageData.apply(this, arguments);
+                                for (var i = 0; i < d.data.length; i += 4) {
+                                    d.data[i] = d.data[i] ^ (Math.random() < 0.5 ? 0 : 1);
+                                }
+                                return d;
+                            };
+                        } catch (e) {}
+
+                        try {
+                            var origGetChannelData = AudioBuffer.prototype.getChannelData;
+                            AudioBuffer.prototype.getChannelData = function() {
+                                var data = origGetChannelData.apply(this, arguments);
+                                for (var i = 0; i < data.length; i += 100) {
+                                    data[i] = data[i] + (Math.random() * 0.0000001);
+                                }
+                                return data;
+                            };
+                        } catch (e) {}
+
+                        try {
+                            var origGetParameter = WebGLRenderingContext.prototype.getParameter;
+                            WebGLRenderingContext.prototype.getParameter = function(param) {
+                                if (param === 37445) return 'Generic GPU Vendor';
+                                if (param === 37446) return 'Generic GPU Renderer';
+                                return origGetParameter.apply(this, arguments);
+                            };
+                        } catch (e) {}
+
+                        try {
+                            Object.defineProperty(navigator, 'hardwareConcurrency', { get: function() { return 4; } });
+                        } catch (e) {}
+                        try {
+                            Object.defineProperty(navigator, 'deviceMemory', { get: function() { return 4; } });
                         } catch (e) {}
                     })();
                     """.trimIndent(),
@@ -296,6 +369,10 @@ fun AppWebView(
         }
     }
 
+    // Do Not Track + Global Privacy Control: not legally binding on most
+    // sites, but costs nothing to send and some do honor it.
+    val privacyHeaders = mapOf("DNT" to "1", "Sec-GPC" to "1")
+
     AndroidView(
         factory = {
             webView.apply {
@@ -371,7 +448,8 @@ fun AppWebView(
                         }
 
                         if (allowedDomain.isNotBlank() && host.contains(allowedDomain)) {
-                            return false // Load inside WebView
+                            view?.loadUrl(url, privacyHeaders)
+                            return true
                         }
 
                         // Sites whose login/challenge (e.g. Cloudflare) fails
@@ -514,12 +592,12 @@ fun AppWebView(
                     }
                 }
 
-                loadUrl(urlToLoad)
+                loadUrl(urlToLoad, privacyHeaders)
             }
         },
         update = {
             if (it.url != urlToLoad && !isRefreshing) {
-                // Keep URL updated
+                it.loadUrl(urlToLoad, privacyHeaders)
             }
         },
         modifier = modifier

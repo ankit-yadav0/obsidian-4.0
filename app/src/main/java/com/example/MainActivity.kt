@@ -58,7 +58,7 @@ import com.example.weblite.ui.components.BrowserTopBar
 import com.example.weblite.ui.components.DownloadsSheet
 import com.example.weblite.ui.components.HomeScreen
 import com.example.weblite.ui.components.OfflineBanner
-import com.example.weblite.ui.components.VpnWarningBanner
+import com.example.weblite.ui.components.VpnRequiredOverlay
 import com.example.weblite.ui.components.OfflineErrorView
 import com.example.weblite.ui.components.SplashScreen
 import com.example.weblite.viewmodel.MainViewModel
@@ -341,25 +341,8 @@ class MainActivity : ComponentActivity() {
                         }
                     )
 
-                    // Warning-only nudge to connect Proton VPN — browsing is
-                    // never blocked by this, it's just a reminder banner.
-                    VpnWarningBanner(
-                        isProtonVpnActive = protonVpnActive,
-                        isProtonVpnInstalled = viewModel.isProtonVpnInstalled(),
-                        onOpenProtonVpn = {
-                            val protonPackage = com.example.weblite.vpn.VpnStatusMonitor.PROTON_VPN_PACKAGE
-                            val launchIntent = packageManager.getLaunchIntentForPackage(protonPackage)
-                            if (launchIntent != null) {
-                                startActivity(launchIntent)
-                            } else {
-                                try {
-                                    startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("market://details?id=$protonPackage")))
-                                } catch (e: Exception) {
-                                    startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://play.google.com/store/apps/details?id=$protonPackage")))
-                                }
-                            }
-                        }
-                    )
+                    // (VPN status is now enforced via the full-screen
+                    // VpnRequiredOverlay below instead of a small banner.)
 
                     // Pull-to-refresh Wrapper
                     PullToRefreshBox(
@@ -458,6 +441,28 @@ class MainActivity : ComponentActivity() {
                             modifier = Modifier.fillMaxSize()
                         )
                     }
+                }
+
+                // Browsing is paused while Proton VPN isn't detected as
+                // active — covers the toolbar + page content, but doesn't
+                // stop the fullscreen-video container below it.
+                if (!protonVpnActive) {
+                    VpnRequiredOverlay(
+                        isProtonVpnInstalled = viewModel.isProtonVpnInstalled(),
+                        onOpenProtonVpn = {
+                            val protonPackage = com.example.weblite.vpn.VpnStatusMonitor.PROTON_VPN_PACKAGE
+                            val launchIntent = packageManager.getLaunchIntentForPackage(protonPackage)
+                            if (launchIntent != null) {
+                                startActivity(launchIntent)
+                            } else {
+                                try {
+                                    startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("market://details?id=$protonPackage")))
+                                } catch (e: Exception) {
+                                    startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://play.google.com/store/apps/details?id=$protonPackage")))
+                                }
+                            }
+                        }
+                    )
                 }
 
                 // Fullscreen Video Layout Container
