@@ -60,6 +60,7 @@ import com.example.weblite.ui.components.HomeScreen
 import com.example.weblite.ui.components.OfflineBanner
 import com.example.weblite.ui.components.VpnRequiredOverlay
 import com.example.weblite.ui.components.OfflineErrorView
+import com.example.weblite.ui.components.PrivacyDashboardSheet
 import com.example.weblite.ui.components.SplashScreen
 import com.example.weblite.viewmodel.MainViewModel
 import com.example.ui.theme.AppTheme
