@@ -166,7 +166,7 @@ fun HomeScreen(
         Spacer(Modifier.height(8.dp))
 
         TextButton(
-            onClick = { if (urlText.isNotBlank()) onOpenIncognito(urlText) },
+            onClick = { onOpenIncognito(urlText) },
             modifier = Modifier.fillMaxWidth()
         ) {
             Icon(Icons.Default.VisibilityOff, contentDescription = null, modifier = Modifier.size(16.dp), tint = Color.White.copy(alpha = 0.7f))

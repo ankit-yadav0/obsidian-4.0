@@ -521,13 +521,21 @@ fun AppWebView(
                             return true
                         }
 
-                        return try {
-                            val intent = Intent(Intent.ACTION_VIEW, uri)
-                            context.startActivity(intent)
-                            true
-                        } catch (e: Exception) {
-                            true
-                        }
+                        // Redirect fix: this used to hand every remaining
+                        // off-domain, gesture-having navigation to an
+                        // external app via ACTION_VIEW. In practice
+                        // ad-heavy/streaming sites use invisible full-page
+                        // overlays that steal a real tap meant for
+                        // something else on the page (e.g. a play button)
+                        // and fire a same-window redirect with it — that
+                        // still counts as "has a gesture", so it was
+                        // kicking the user out to Play Store or another
+                        // browser. Block it and stay put instead. A site
+                        // the user genuinely wants to leave the app for is
+                        // still reachable via the topbar's "Open
+                        // Externally" action or the always-external toggle.
+                        onTrackerBlocked(host)
+                        return true
                     }
 
                     override fun onPageStarted(view: WebView?, url: String?, favicon: Bitmap?) {

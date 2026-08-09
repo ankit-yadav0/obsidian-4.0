@@ -238,30 +238,48 @@ class MainActivity : ComponentActivity() {
         }
 
         if (showHomeScreen) {
-            HomeScreen(
-                openTabs = tabs,
-                hiddenTabsUnlocked = hiddenTabsUnlocked,
-                isPinSet = viewModel.isPinSet(),
-                trackersBlockedCount = trackersBlockedCount,
-                bookmarks = bookmarks,
-                torEnabled = torEnabled,
-                torStatusMessage = torStatusMessage,
-                isOrbotInstalled = viewModel.isOrbotInstalled(),
-                onOpenUrl = { url -> viewModel.openNewTab(url) },
-                onOpenIncognito = { url -> viewModel.openNewTab(url, incognito = true) },
-                onOpenPrivacyDashboard = { showPrivacyDashboard = true },
-                onOpenBookmark = { url -> viewModel.openNewTab(url) },
-                onDeleteBookmark = { url -> viewModel.removeBookmark(url) },
-                onToggleTor = { enabled -> viewModel.toggleTor(enabled) },
-                onResumeTab = { id -> viewModel.switchToTab(id) },
-                onCloseTab = { id -> viewModel.closeTab(id) },
-                onHideTab = { id -> viewModel.hideTab(id) },
-                onUnhideTab = { id -> viewModel.unhideTab(id) },
-                onSetPin = { pin -> viewModel.setPin(pin) },
-                onUnlockAttempt = { pin -> viewModel.unlockHiddenTabs(pin) },
-                onRelock = { viewModel.relockHiddenTabs() },
-                modifier = Modifier.fillMaxSize()
-            )
+            Box(modifier = Modifier.fillMaxSize()) {
+                HomeScreen(
+                    openTabs = tabs,
+                    hiddenTabsUnlocked = hiddenTabsUnlocked,
+                    isPinSet = viewModel.isPinSet(),
+                    trackersBlockedCount = trackersBlockedCount,
+                    bookmarks = bookmarks,
+                    torEnabled = torEnabled,
+                    torStatusMessage = torStatusMessage,
+                    isOrbotInstalled = viewModel.isOrbotInstalled(),
+                    onOpenUrl = { url -> viewModel.openNewTab(url) },
+                    onOpenIncognito = { url -> viewModel.openNewTab(url, incognito = true) },
+                    onOpenPrivacyDashboard = { showPrivacyDashboard = true },
+                    onOpenBookmark = { url -> viewModel.openNewTab(url) },
+                    onDeleteBookmark = { url -> viewModel.removeBookmark(url) },
+                    onToggleTor = { enabled -> viewModel.toggleTor(enabled) },
+                    onResumeTab = { id -> viewModel.switchToTab(id) },
+                    onCloseTab = { id -> viewModel.closeTab(id) },
+                    onHideTab = { id -> viewModel.hideTab(id) },
+                    onUnhideTab = { id -> viewModel.unhideTab(id) },
+                    onSetPin = { pin -> viewModel.setPin(pin) },
+                    onUnlockAttempt = { pin -> viewModel.unlockHiddenTabs(pin) },
+                    onRelock = { viewModel.relockHiddenTabs() },
+                    modifier = Modifier.fillMaxSize()
+                )
+
+                // Bug fix: this sheet previously only existed inside the
+                // browsing Scaffold further down, which the `return` below
+                // skips entirely while on the Home Screen. Tapping the
+                // dashboard row above flipped showPrivacyDashboard to true,
+                // but nothing was composed to react to it. Rendered here
+                // too so the dashboard is reachable from both screens.
+                PrivacyDashboardSheet(
+                    isVisible = showPrivacyDashboard,
+                    trackersBlockedCount = trackersBlockedCount,
+                    adultSitesBlockedCount = adultSitesBlockedCount,
+                    isProtonVpnActive = protonVpnActive,
+                    isIncognitoActive = activeTabIsIncognito,
+                    events = blockedEvents,
+                    onDismiss = { showPrivacyDashboard = false }
+                )
+            }
             return
         }
 
@@ -531,7 +549,9 @@ class MainActivity : ComponentActivity() {
                     onRetry = { item -> viewModel.retryDownload(item) }
                 )
 
-                // Privacy Dashboard - proof of what's actually being blocked
+                // Privacy Dashboard - proof of what's actually being blocked.
+                // Also rendered in the showHomeScreen branch above, since
+                // that branch returns before ever reaching this Scaffold.
                 PrivacyDashboardSheet(
                     isVisible = showPrivacyDashboard,
                     trackersBlockedCount = trackersBlockedCount,
