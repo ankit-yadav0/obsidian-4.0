@@ -27,11 +27,21 @@ jobs:
         uses: android-actions/setup-android@v3
 
       # No committed Gradle wrapper needed - this downloads and caches a
-      # current Gradle distribution instead of relying on ./gradlew.
+      # pinned Gradle distribution instead of relying on ./gradlew.
+      # Pinned (not "current") because AGP 9.1.1's own compatibility table
+      # lists 9.3.1 as both its minimum AND default Gradle version. AGP's
+      # built-in-Kotlin feature (which replaced org.jetbrains.kotlin.android)
+      # is a tight, version-sensitive integration with Gradle internals, not
+      # a stable public API - "current" drifts forward on every run, and by
+      # the time it reached Gradle 9.7.0 that drift broke the Compose
+      # compiler plugin ("...ComposePluginRegistrar is incompatible with the
+      # current version of the compiler" / AbstractMethodError: getPluginId()),
+      # even though the Kotlin/Compose-compiler versions in libs.versions.toml
+      # were themselves correctly matched to each other.
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
-          gradle-version: current
+          gradle-version: "9.3.1"
 
       - name: Build debug APK
         run: gradle assembleDebug --no-daemon --stacktrace
