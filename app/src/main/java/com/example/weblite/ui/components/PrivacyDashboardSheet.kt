@@ -45,7 +45,6 @@ import java.util.Locale
 fun PrivacyDashboardSheet(
     isVisible: Boolean,
     trackersBlockedCount: Int,
-    adultSitesBlockedCount: Int,
     isProtonVpnActive: Boolean,
     isIncognitoActive: Boolean,
     events: List<MainViewModel.BlockedEvent>,
@@ -106,14 +105,6 @@ fun PrivacyDashboardSheet(
                         value = trackersBlockedCount.toString(),
                         label = "Ads/trackers blocked",
                         color = Color(0xFF4CAF50),
-                        modifier = Modifier.weight(1f)
-                    )
-                    Spacer(Modifier.width(10.dp))
-                    StatCard(
-                        icon = Icons.Default.Shield,
-                        value = adultSitesBlockedCount.toString(),
-                        label = "Adult sites blocked",
-                        color = Color(0xFFFF7043),
                         modifier = Modifier.weight(1f)
                     )
                 }

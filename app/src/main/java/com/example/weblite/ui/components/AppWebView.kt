@@ -51,7 +51,6 @@ private val AD_TRACKER_HOSTS = listOf(
     "taboola.com",
     "outbrain.com",
     // Analytics / behavioral trackers
-    "facebook.com/tr",
     "connect.facebook.net",
     "hotjar.com",
     "mixpanel.com",
@@ -60,7 +59,6 @@ private val AD_TRACKER_HOSTS = listOf(
     "amplitude.com",
     "fullstory.com",
     "clarity.ms",
-    "yandex.ru/metrika",
     "quantserve.com",
     "criteo.com",
     "criteo.net",
@@ -68,7 +66,6 @@ private val AD_TRACKER_HOSTS = listOf(
     "adsystem.com",
     "adservice.google.com",
     "amazon-adsystem.com",
-    "bing.com/bat.js",
     "advertising.com",
     "adcolony.com",
     "mopub.com",
@@ -80,6 +77,51 @@ private val AD_TRACKER_HOSTS = listOf(
     "revcontent.com",
     "mgid.com"
 )
+
+// BUG FIX: these three used to live in AD_TRACKER_HOSTS above as
+// "facebook.com/tr", "bing.com/bat.js", "yandex.ru/metrika" — but that list
+// is only ever checked against `request.url.host` (e.g. "facebook.com"),
+// which never contains a "/", so those entries could never match and were
+// silently dead. They're path-specific tracking endpoints, not whole
+// domains to block (blocking all of facebook.com/bing.com/yandex.ru would
+// break logins/embeds), so they belong here and are matched against the
+// full URL string instead, alongside the other path-based checks below.
+private val AD_TRACKER_URL_PATH_PATTERNS = listOf(
+    "facebook.com/tr",
+    "bing.com/bat.js",
+    "yandex.ru/metrika"
+)
+
+// BUG FIX: common two-part ccTLDs where the "real" registrable domain is
+// 3 labels, not 2 (e.g. "example.co.in", not "co.in"). Not exhaustive —
+// covers the common cases well enough for same-site navigation checks.
+private val TWO_PART_TLD_SECOND_LABELS = setOf("co", "com", "org", "net", "gov", "edu", "ac", "ne", "or")
+
+/**
+ * BUG FIX (domain isolation silently blocking same-site navigation):
+ * allowedDomain is a single host string, e.g. "m.youtube.com" — the host
+ * of whichever page last finished loading in this tab. Sites constantly
+ * redirect between subdomains of the same site (m. <-> www., consent.,
+ * accounts.google.com during login, etc). The old check
+ * `host.contains(allowedDomain)` compared exact host strings, so any such
+ * subdomain hop failed the check and fell through to the tracker-block
+ * fallback at the bottom of shouldOverrideUrlLoading — silently eating
+ * the navigation with no error shown, making the browser look frozen.
+ *
+ * Fix: compare the *registrable domain* (roughly, site identity) instead
+ * of the exact host, the same way ExternalHandoffManager
+ * already compare bare domains rather than exact hosts.
+ */
+private fun registrableDomain(host: String): String {
+    val parts = host.lowercase().removePrefix("www.").split(".").filter { it.isNotBlank() }
+    if (parts.size <= 2) return parts.joinToString(".")
+    val secondLast = parts[parts.size - 2]
+    return if (secondLast in TWO_PART_TLD_SECOND_LABELS) {
+        parts.takeLast(3).joinToString(".")
+    } else {
+        parts.takeLast(2).joinToString(".")
+    }
+}
 
 @SuppressLint("SetJavaScriptEnabled")
 @Composable
@@ -100,8 +142,6 @@ fun AppWebView(
     onWebViewCreated: (WebView) -> Unit,
     onDownloadRequested: (url: String, fileName: String, mimeType: String, userAgent: String?, cookie: String?) -> Unit,
     onTrackerBlocked: (String) -> Unit,
-    isAdultContentHost: (String) -> Boolean,
-    onAdultContentBlocked: (String) -> Unit,
     shouldOpenExternally: (String) -> Boolean,
     modifier: Modifier = Modifier
 ) {
@@ -220,6 +260,8 @@ fun AppWebView(
                                         var d = ctx.getImageData(0, 0, this.width, this.height);
                                         for (var i = 0; i < d.data.length; i += 4) {
                                             d.data[i] = d.data[i] ^ (Math.random() < 0.5 ? 0 : 1);
+                                            d.data[i+1] = d.data[i+1] ^ (Math.random() < 0.5 ? 0 : 1);
+                                            d.data[i+2] = d.data[i+2] ^ (Math.random() < 0.5 ? 0 : 1);
                                         }
                                         ctx.putImageData(d, 0, 0);
                                     }
@@ -231,6 +273,8 @@ fun AppWebView(
                                 var d = origGetImageData.apply(this, arguments);
                                 for (var i = 0; i < d.data.length; i += 4) {
                                     d.data[i] = d.data[i] ^ (Math.random() < 0.5 ? 0 : 1);
+                                    d.data[i+1] = d.data[i+1] ^ (Math.random() < 0.5 ? 0 : 1);
+                                    d.data[i+2] = d.data[i+2] ^ (Math.random() < 0.5 ? 0 : 1);
                                 }
                                 return d;
                             };
@@ -421,16 +465,9 @@ fun AppWebView(
                         val urlString = request?.url?.toString()?.lowercase() ?: return super.shouldInterceptRequest(view, request)
                         val host = request.url?.host?.lowercase() ?: ""
 
-                        // Adult-content blocking is intentionally independent of the
-                        // ad/tracker shield toggle above (shieldOffState) — it stays
-                        // active even if the user has turned ad-blocking off for a site.
-                        if (isAdultContentHost(host)) {
-                            onAdultContentBlocked(host)
-                            return WebResourceResponse("text/plain", "UTF-8", ByteArrayInputStream(ByteArray(0)))
-                        }
-
                         if (!shieldOffState.value && (
                             AD_TRACKER_HOSTS.any { host.contains(it) } ||
+                            AD_TRACKER_URL_PATH_PATTERNS.any { urlString.contains(it) } ||
                             urlString.contains("/adservice/") ||
                             urlString.contains("/pagead/") ||
                             urlString.contains("googleanalytics")
@@ -468,22 +505,7 @@ fun AppWebView(
                         // Domain isolation: Only keep example.com in WebView, open others in browser
                         val host = uri.host?.lowercase() ?: ""
 
-                        // Checked before the domain-isolation early-return above it in
-                        // priority doesn't apply here — a blocked host should never load,
-                        // even if it happened to match allowedDomain.
-                        if (isAdultContentHost(host)) {
-                            onAdultContentBlocked(host)
-                            view?.loadDataWithBaseURL(
-                                null,
-                                blockedPageHtml(host),
-                                "text/html",
-                                "UTF-8",
-                                null
-                            )
-                            return true
-                        }
-
-                        if (allowedDomain.isNotBlank() && host.contains(allowedDomain)) {
+                        if (allowedDomain.isNotBlank() && registrableDomain(host) == registrableDomain(allowedDomain)) {
                             view?.loadUrl(url, privacyHeaders)
                             return true
                         }
@@ -650,22 +672,6 @@ fun AppWebView(
 
 // Simple local page shown in place of a blocked adult-content site —
 // keeps the WebView from just going blank/stuck.
-private fun blockedPageHtml(host: String): String {
-    val safeHost = host.replace("<", "&lt;").replace(">", "&gt;")
-    return """
-        <html>
-        <head><meta name="viewport" content="width=device-width, initial-scale=1"></head>
-        <body style="background:#0D0E15;color:#FFFFFF;font-family:sans-serif;
-                     display:flex;flex-direction:column;align-items:center;
-                     justify-content:center;height:100vh;margin:0;padding:24px;text-align:center;">
-            <div style="font-size:48px;margin-bottom:12px;">&#128683;</div>
-            <div style="font-size:18px;font-weight:bold;margin-bottom:8px;">Site blocked</div>
-            <div style="font-size:14px;color:#A0A0A0;">$safeHost is blocked by Obsidian's content filter.</div>
-        </body>
-        </html>
-    """.trimIndent()
-}
-
 // Helper class for URL file name guessing
 private object URLUtil {
     fun guessFileName(url: String, contentDisposition: String?, mimeType: String?): String {

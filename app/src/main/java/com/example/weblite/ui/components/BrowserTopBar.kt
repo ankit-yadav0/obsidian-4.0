@@ -14,13 +14,11 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Block
 import androidx.compose.material.icons.filled.GppGood
 import androidx.compose.material.icons.filled.GppMaybe
 import androidx.compose.material.icons.filled.Layers
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.OpenInBrowser
-import androidx.compose.material.icons.filled.RemoveModerator
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.StarBorder
 import androidx.compose.material.icons.filled.VisibilityOff
@@ -50,13 +48,11 @@ fun BrowserTopBar(
     isShieldOff: Boolean,
     isBookmarked: Boolean,
     isHttps: Boolean,
-    adultBlockEnabled: Boolean,
     isAlwaysExternal: Boolean,
     isIncognito: Boolean,
     onNavigate: (String) -> Unit,
     onToggleShield: () -> Unit,
     onToggleBookmark: () -> Unit,
-    onToggleAdultBlock: () -> Unit,
     onOpenExternally: () -> Unit,
     onToggleAlwaysExternal: () -> Unit,
     onTabsClick: () -> Unit,
@@ -151,14 +147,6 @@ fun BrowserTopBar(
                 imageVector = if (isBookmarked) Icons.Default.Star else Icons.Default.StarBorder,
                 contentDescription = if (isBookmarked) "Remove bookmark" else "Add bookmark",
                 tint = if (isBookmarked) Color(0xFFFFC107) else Color.White.copy(alpha = 0.7f)
-            )
-        }
-
-        IconButton(onClick = onToggleAdultBlock) {
-            Icon(
-                imageVector = if (adultBlockEnabled) Icons.Default.Block else Icons.Default.RemoveModerator,
-                contentDescription = if (adultBlockEnabled) "Adult content blocking on" else "Adult content blocking off",
-                tint = if (adultBlockEnabled) Color(0xFF4CAF50) else Color(0xFFFFA726)
             )
         }
 

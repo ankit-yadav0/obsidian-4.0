@@ -167,7 +167,6 @@ class MainActivity : ComponentActivity() {
         val activeTabIsShieldOff by viewModel.activeTabIsShieldOff.collectAsState()
         val activeTabIsIncognito by viewModel.activeTabIsIncognito.collectAsState()
         val blockedEvents by viewModel.blockedEvents.collectAsState()
-        val adultSitesBlockedCount by viewModel.adultSitesBlockedCount.collectAsState()
         var showPrivacyDashboard by remember { mutableStateOf(false) }
         val hiddenTabsUnlocked by viewModel.hiddenTabsUnlocked.collectAsState()
         val trackersBlockedCount by viewModel.trackersBlockedCount.collectAsState()
@@ -175,7 +174,6 @@ class MainActivity : ComponentActivity() {
         val isActiveTabBookmarked = bookmarks.any { it.url == currentUrl }
         val torEnabled by viewModel.torEnabled.collectAsState()
         val torStatusMessage by viewModel.torStatusMessage.collectAsState()
-        val adultBlockEnabled by viewModel.adultBlockEnabled.collectAsState()
         val protonVpnActive by viewModel.protonVpnActive.collectAsState()
         val isAlwaysExternal by viewModel.isAlwaysExternalForCurrentUrl.collectAsState()
 
@@ -273,7 +271,6 @@ class MainActivity : ComponentActivity() {
                 PrivacyDashboardSheet(
                     isVisible = showPrivacyDashboard,
                     trackersBlockedCount = trackersBlockedCount,
-                    adultSitesBlockedCount = adultSitesBlockedCount,
                     isProtonVpnActive = protonVpnActive,
                     isIncognitoActive = activeTabIsIncognito,
                     events = blockedEvents,
@@ -301,7 +298,6 @@ class MainActivity : ComponentActivity() {
                             isShieldOff = activeTabIsShieldOff,
                             isBookmarked = isActiveTabBookmarked,
                             isHttps = currentUrl.startsWith("https://"),
-                            adultBlockEnabled = adultBlockEnabled,
                             isAlwaysExternal = isAlwaysExternal,
                             isIncognito = activeTabIsIncognito,
                             onNavigate = { input -> viewModel.navigateActiveTab(input) },
@@ -313,7 +309,6 @@ class MainActivity : ComponentActivity() {
                                     viewModel.addBookmark(currentUrl, webViewRef?.title ?: currentUrl)
                                 }
                             },
-                            onToggleAdultBlock = { viewModel.toggleAdultBlock(!adultBlockEnabled) },
                             onOpenExternally = {
                                 try {
                                     val chooser = Intent.createChooser(Intent(Intent.ACTION_VIEW, Uri.parse(currentUrl)), "Open with")
@@ -460,8 +455,6 @@ class MainActivity : ComponentActivity() {
                                 viewModel.startDownload(url, fileName, mimeType, userAgent, cookie)
                             },
                             onTrackerBlocked = { host -> viewModel.onTrackerBlocked(host) },
-                            isAdultContentHost = { host -> viewModel.isAdultContentHost(host) },
-                            onAdultContentBlocked = { host -> viewModel.onAdultContentBlocked(host) },
                             shouldOpenExternally = { host -> viewModel.shouldOpenExternally(host) },
                             modifier = Modifier.fillMaxSize()
                         )
@@ -555,7 +548,6 @@ class MainActivity : ComponentActivity() {
                 PrivacyDashboardSheet(
                     isVisible = showPrivacyDashboard,
                     trackersBlockedCount = trackersBlockedCount,
-                    adultSitesBlockedCount = adultSitesBlockedCount,
                     isProtonVpnActive = protonVpnActive,
                     isIncognitoActive = activeTabIsIncognito,
                     events = blockedEvents,

@@ -19,7 +19,6 @@ import kotlinx.coroutines.launch
 import android.net.Uri
 import java.util.UUID
 import com.example.weblite.data.PinManager
-import com.example.weblite.privacy.AdultContentFilter
 import com.example.weblite.privacy.ExternalHandoffManager
 import com.example.weblite.vpn.VpnStatusMonitor
 
@@ -90,27 +89,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun isPinSet(): Boolean = pinManager.isPinSet()
     fun setPin(pin: String) = pinManager.setPin(pin)
     fun verifyPin(pin: String): Boolean = pinManager.verifyPin(pin)
-
-    // --- Adult content filter ---
-    private val adultContentFilter = AdultContentFilter(application)
-    private val _adultBlockEnabled = MutableStateFlow(adultContentFilter.isEnabled())
-    val adultBlockEnabled: StateFlow<Boolean> = _adultBlockEnabled.asStateFlow()
-
-    fun toggleAdultBlock(enabled: Boolean) {
-        adultContentFilter.setEnabled(enabled)
-        _adultBlockEnabled.value = enabled
-    }
-
-    fun isAdultContentHost(host: String): Boolean = adultContentFilter.isBlockedHost(host)
-
-    // Same visible-proof pattern as trackersBlockedCount below.
-    private val _adultSitesBlockedCount = MutableStateFlow(0)
-    val adultSitesBlockedCount: StateFlow<Int> = _adultSitesBlockedCount.asStateFlow()
-
-    fun onAdultContentBlocked(host: String) {
-        _adultSitesBlockedCount.value += 1
-        logBlockedEvent(host, "Adult content")
-    }
 
     // --- Sites that hand off to an external browser instead of loading in-app ---
     private val externalHandoffManager = ExternalHandoffManager(application)
