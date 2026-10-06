@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- Themed (monochrome) icon: only the outline and the slit. The full-colour logo is one opaque
+         silhouette once tinted, which hides the slit. -->
+    <path
+        android:pathData="M84,54 L69,80 L39,80 L24,54 L39,28 L69,28 Z"
+        android:strokeColor="#FF000000"
+        android:strokeWidth="3.5"
+        android:fillColor="#00000000" />
+    <path
+        android:pathData="M42,54 L66,54"
+        android:strokeColor="#FF000000"
+        android:strokeWidth="6"
+        android:strokeLineCap="round"
+        android:fillColor="#00000000" />
+</vector>

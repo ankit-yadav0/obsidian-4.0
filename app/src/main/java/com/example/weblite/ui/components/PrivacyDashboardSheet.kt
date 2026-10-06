@@ -36,6 +36,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.weblite.viewmodel.MainViewModel
+import com.example.weblite.webview.BlockCategory
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -114,14 +115,14 @@ fun PrivacyDashboardSheet(
                 Row(modifier = Modifier.fillMaxWidth()) {
                     StatusPill(
                         icon = Icons.Default.VpnKey,
-                        label = if (isProtonVpnActive) "VPN active" else "VPN not detected",
+                        label = if (isProtonVpnActive) "VPN connected" else "VPN not connected",
                         active = isProtonVpnActive,
                         modifier = Modifier.weight(1f)
                     )
                     Spacer(Modifier.width(10.dp))
                     StatusPill(
                         icon = Icons.Default.VisibilityOff,
-                        label = if (isIncognitoActive) "Incognito active" else "Incognito off",
+                        label = if (isIncognitoActive) "Incognito tab open" else "No incognito tab open",
                         active = isIncognitoActive,
                         modifier = Modifier.weight(1f)
                     )
@@ -197,7 +198,8 @@ fun PrivacyDashboardSheet(
                                 .size(6.dp)
                                 .clip(CircleShape)
                                 .background(
-                                    if (event.category == "Adult content") Color(0xFFFF7043) else Color(0xFF4CAF50)
+                                    // orange = a link you tapped that the site lock refused; green = ads, trackers, redirects
+                                    if (event.category == BlockCategory.LINK) Color(0xFFFFA726) else Color(0xFF4CAF50)
                                 )
                         )
                         Spacer(Modifier.width(8.dp))

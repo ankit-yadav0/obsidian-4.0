@@ -20,14 +20,14 @@ abstract class AppDatabase : RoomDatabase() {
         private var INSTANCE: AppDatabase? = null
 
         fun getDatabase(context: Context): AppDatabase {
-            return INSTANCE ?: synchronized(this) {
-                val instance = Room.databaseBuilder(
+            INSTANCE?.let { return it }
+            return synchronized(this) {
+                // Re-check inside the lock so two racing callers can't each build a database.
+                INSTANCE ?: Room.databaseBuilder(
                     context.applicationContext,
                     AppDatabase::class.java,
                     "weblite_database"
-                ).fallbackToDestructiveMigration().build()
-                INSTANCE = instance
-                instance
+                ).fallbackToDestructiveMigration().build().also { INSTANCE = it }
             }
         }
     }

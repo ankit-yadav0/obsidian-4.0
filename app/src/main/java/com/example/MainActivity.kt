@@ -1,11 +1,14 @@
 package com.example
 
 import android.Manifest
-import android.annotation.SuppressLint
+import android.app.AlertDialog
 import android.content.Intent
 import android.content.pm.ActivityInfo
+import android.content.pm.PackageManager
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
+import android.text.format.Formatter
 import android.view.View
 import android.view.ViewGroup
 import android.webkit.PermissionRequest
@@ -37,11 +40,13 @@ import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarDuration
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
-import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -52,21 +57,33 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.example.ui.theme.AppTheme
+import com.example.ui.theme.ObsidianRed
 import com.example.weblite.network.NetworkObserver
+import com.example.weblite.privacy.BrowsingDataWiper
 import com.example.weblite.ui.components.AppWebView
 import com.example.weblite.ui.components.BrowserTopBar
 import com.example.weblite.ui.components.DownloadsSheet
 import com.example.weblite.ui.components.HomeScreen
 import com.example.weblite.ui.components.OfflineBanner
-import com.example.weblite.ui.components.VpnRequiredOverlay
 import com.example.weblite.ui.components.OfflineErrorView
 import com.example.weblite.ui.components.PrivacyDashboardSheet
 import com.example.weblite.ui.components.SplashScreen
+import com.example.weblite.ui.components.VpnRequiredOverlay
 import com.example.weblite.viewmodel.MainViewModel
-import com.example.ui.theme.AppTheme
-import com.example.ui.theme.CineRed
+import com.example.weblite.vpn.VpnStatusMonitor
 
 class MainActivity : ComponentActivity() {
+
+    private data class PendingDownload(
+        val url: String,
+        val fileName: String,
+        val mimeType: String,
+        val userAgent: String?,
+        val cookie: String?,
+        val contentLength: Long
+    )
 
     private val viewModel: MainViewModel by viewModels()
     private lateinit var networkObserver: NetworkObserver
@@ -79,13 +96,18 @@ class MainActivity : ComponentActivity() {
     private var customViewCallback: WebChromeClient.CustomViewCallback? = null
     private var fullscreenContainer: FrameLayout? = null
 
-    // Pending WebRTC permission request
+    // Camera / microphone request from a page, waiting for the user's decision and the OS permission
     private var pendingPermissionRequest: PermissionRequest? = null
+    private var permissionDialog: AlertDialog? = null
+
+    // Download confirmation and (Android 9 and older) the storage permission it may need
+    private var downloadDialog: AlertDialog? = null
+    private var afterStoragePermission: (() -> Unit)? = null
 
     // Double back press exit logic
     private var backPressedTime: Long = 0
 
-    // Reference to WebView
+    // Reference to the live WebView (null while no page is shown)
     private var webViewRef: WebView? = null
 
     private val fileChooserLauncher =
@@ -111,22 +133,30 @@ class MainActivity : ComponentActivity() {
         }
 
     private val requestPermissionLauncher =
-        registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { permissions ->
-            var allGranted = true
-            permissions.entries.forEach { entry ->
-                if (!entry.value) allGranted = false
-            }
+        registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) {
+            val request = pendingPermissionRequest ?: return@registerForActivityResult
+            // Grants whichever of the requested resources the OS now allows; denies the request if none.
+            finishPermissionRequest(request, grant = true)
+        }
 
-            if (allGranted && pendingPermissionRequest != null) {
-                pendingPermissionRequest?.grant(pendingPermissionRequest?.resources)
-            } else if (pendingPermissionRequest != null) {
-                pendingPermissionRequest?.deny()
+    private val storagePermissionLauncher =
+        registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+            val action = afterStoragePermission
+            afterStoragePermission = null
+            if (granted && action != null) {
+                action()
+            } else if (!granted) {
+                Toast.makeText(this, "Storage permission is needed to save downloads", Toast.LENGTH_LONG).show()
             }
-            pendingPermissionRequest = null
         }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+
+        // Must come before anything creates a WebView: removes what an earlier run left on disk.
+        // (If the app was force-stopped or killed, onDestroy never ran and nothing else would clean up.)
+        BrowsingDataWiper.wipeStoredFilesOnColdStart(this)
+
         enableEdgeToEdge()
 
         // Privacy: block screenshots/screen recording and hide the page
@@ -150,32 +180,40 @@ class MainActivity : ComponentActivity() {
     private fun MainContent() {
         val context = LocalContext.current
 
-        val currentUrl by viewModel.currentUrl.collectAsState()
-        val isLoading by viewModel.isLoading.collectAsState()
-        val loadingProgress by viewModel.loadingProgress.collectAsState()
-        val isOffline by viewModel.isOffline.collectAsState()
-        val errorMessage by viewModel.errorMessage.collectAsState()
-        val canGoBack by viewModel.canGoBack.collectAsState()
-        val isRefreshing by viewModel.isRefreshing.collectAsState()
-        val showSplashScreen by viewModel.showSplashScreen.collectAsState()
-        val isBannerOffline by viewModel.isBannerOffline.collectAsState()
-        val downloads by viewModel.downloads.collectAsState()
-        val showDownloadsSheet by viewModel.showDownloadsSheet.collectAsState()
-        val tabs by viewModel.tabs.collectAsState()
-        val showHomeScreen by viewModel.showHomeScreen.collectAsState()
-        val allowedDomain by viewModel.activeAllowedDomain.collectAsState()
-        val activeTabIsShieldOff by viewModel.activeTabIsShieldOff.collectAsState()
-        val activeTabIsIncognito by viewModel.activeTabIsIncognito.collectAsState()
-        val blockedEvents by viewModel.blockedEvents.collectAsState()
+        val currentUrl by viewModel.currentUrl.collectAsStateWithLifecycle()
+        val isLoading by viewModel.isLoading.collectAsStateWithLifecycle()
+        val loadingProgress by viewModel.loadingProgress.collectAsStateWithLifecycle()
+        val isOffline by viewModel.isOffline.collectAsStateWithLifecycle()
+        val errorMessage by viewModel.errorMessage.collectAsStateWithLifecycle()
+        val isRefreshing by viewModel.isRefreshing.collectAsStateWithLifecycle()
+        val showSplashScreen by viewModel.showSplashScreen.collectAsStateWithLifecycle()
+        val isBannerOffline by viewModel.isBannerOffline.collectAsStateWithLifecycle()
+        val downloads by viewModel.downloads.collectAsStateWithLifecycle()
+        val showDownloadsSheet by viewModel.showDownloadsSheet.collectAsStateWithLifecycle()
+        val tabs by viewModel.tabs.collectAsStateWithLifecycle()
+        val showHomeScreen by viewModel.showHomeScreen.collectAsStateWithLifecycle()
+        val allowedDomain by viewModel.activeAllowedDomain.collectAsStateWithLifecycle()
+        val activeTabIsShieldOff by viewModel.activeTabIsShieldOff.collectAsStateWithLifecycle()
+        val activeTabIsIncognito by viewModel.activeTabIsIncognito.collectAsStateWithLifecycle()
+        val blockedEvents by viewModel.blockedEvents.collectAsStateWithLifecycle()
         var showPrivacyDashboard by remember { mutableStateOf(false) }
-        val hiddenTabsUnlocked by viewModel.hiddenTabsUnlocked.collectAsState()
-        val trackersBlockedCount by viewModel.trackersBlockedCount.collectAsState()
-        val bookmarks by viewModel.bookmarks.collectAsState()
+        val hiddenTabsUnlocked by viewModel.hiddenTabsUnlocked.collectAsStateWithLifecycle()
+        val trackersBlockedCount by viewModel.trackersBlockedCount.collectAsStateWithLifecycle()
+        val bookmarks by viewModel.bookmarks.collectAsStateWithLifecycle()
         val isActiveTabBookmarked = bookmarks.any { it.url == currentUrl }
-        val torEnabled by viewModel.torEnabled.collectAsState()
-        val torStatusMessage by viewModel.torStatusMessage.collectAsState()
-        val protonVpnActive by viewModel.protonVpnActive.collectAsState()
-        val isAlwaysExternal by viewModel.isAlwaysExternalForCurrentUrl.collectAsState()
+        val torEnabled by viewModel.torEnabled.collectAsStateWithLifecycle()
+        val torStatusMessage by viewModel.torStatusMessage.collectAsStateWithLifecycle()
+        val protonVpnActive by viewModel.protonVpnActive.collectAsStateWithLifecycle()
+        val protonInstalled by viewModel.protonVpnInstalled.collectAsStateWithLifecycle()
+        val orbotInstalled by viewModel.orbotInstalled.collectAsStateWithLifecycle()
+        val networkBlocked by viewModel.networkBlocked.collectAsStateWithLifecycle()
+        val pinSet by viewModel.pinSet.collectAsStateWithLifecycle()
+        val navRequest by viewModel.navRequest.collectAsStateWithLifecycle()
+        val blockedNavigation by viewModel.blockedNavigation.collectAsStateWithLifecycle()
+        val isAlwaysExternal by viewModel.isAlwaysExternalForCurrentUrl.collectAsStateWithLifecycle()
+        val isOnline by networkObserver.isOnline.collectAsStateWithLifecycle()
+
+        val snackbarHostState = remember { SnackbarHostState() }
 
         // Immersive full-screen: hide the status/navigation bars while
         // browsing a site, restore them on the URL-entry/tab-switcher screen.
@@ -190,16 +228,32 @@ class MainActivity : ComponentActivity() {
             }
         }
 
-        val isOnline by networkObserver.isOnline.collectAsState()
-
         // Sync network observer with ViewModel & auto-refresh on restoration
         LaunchedEffect(isOnline) {
             val wasOffline = isOffline
             viewModel.updateNetworkState(isOnline)
             if (isOnline && wasOffline) {
                 viewModel.refreshPage()
-                webViewRef?.reload()
             }
+        }
+
+        // A link the user tapped was refused by the site lock: say so, and offer to open it anyway.
+        LaunchedEffect(blockedNavigation) {
+            val blocked = blockedNavigation ?: return@LaunchedEffect
+            val result = snackbarHostState.showSnackbar(
+                message = "Blocked a link to ${blocked.host}",
+                actionLabel = "Open",
+                duration = SnackbarDuration.Long
+            )
+            if (result == SnackbarResult.ActionPerformed) {
+                viewModel.openBlockedNavigation(blocked.url)
+            }
+            viewModel.consumeBlockedNavigation()
+        }
+
+        // Sites the user marked "always open externally" are handed over as soon as they are opened.
+        LaunchedEffect(Unit) {
+            viewModel.externalOpenEvents.collect { url -> openUrlExternally(url) }
         }
 
         var isCustomViewShowing by remember { mutableStateOf(false) }
@@ -209,10 +263,10 @@ class MainActivity : ComponentActivity() {
             if (isCustomViewShowing && customViewCallback != null) {
                 hideCustomView()
                 isCustomViewShowing = false
-            } else if (webViewRef?.canGoBack() == true) {
+            } else if (!showHomeScreen && webViewRef?.canGoBack() == true) {
                 webViewRef?.goBack()
             } else if (!showHomeScreen) {
-                // No more history in this tab — go to the tab switcher
+                // No more history in this tab - go to the tab switcher
                 // instead of exiting the app immediately.
                 viewModel.goHome()
             } else {
@@ -225,13 +279,9 @@ class MainActivity : ComponentActivity() {
             }
         }
 
-        // Cold start: show the splash first, before deciding home vs.
-        // browsing. Previously this check was ordered so that, while the
-        // splash was still visible, the code fell through to the browsing
-        // Scaffold and rendered AppWebView with an empty URL — fixed by
-        // checking splash first and returning early.
+        // Cold start: show the splash first, before deciding home vs. browsing.
         if (showSplashScreen) {
-            SplashScreen(isVisible = true, modifier = Modifier.fillMaxSize())
+            SplashScreen(modifier = Modifier.fillMaxSize())
             return
         }
 
@@ -240,12 +290,12 @@ class MainActivity : ComponentActivity() {
                 HomeScreen(
                     openTabs = tabs,
                     hiddenTabsUnlocked = hiddenTabsUnlocked,
-                    isPinSet = viewModel.isPinSet(),
+                    isPinSet = pinSet,
                     trackersBlockedCount = trackersBlockedCount,
                     bookmarks = bookmarks,
                     torEnabled = torEnabled,
                     torStatusMessage = torStatusMessage,
-                    isOrbotInstalled = viewModel.isOrbotInstalled(),
+                    isOrbotInstalled = orbotInstalled,
                     onOpenUrl = { url -> viewModel.openNewTab(url) },
                     onOpenIncognito = { url -> viewModel.openNewTab(url, incognito = true) },
                     onOpenPrivacyDashboard = { showPrivacyDashboard = true },
@@ -258,16 +308,12 @@ class MainActivity : ComponentActivity() {
                     onUnhideTab = { id -> viewModel.unhideTab(id) },
                     onSetPin = { pin -> viewModel.setPin(pin) },
                     onUnlockAttempt = { pin -> viewModel.unlockHiddenTabs(pin) },
+                    onForgotPin = { viewModel.resetPinAndDeleteHiddenTabs() },
                     onRelock = { viewModel.relockHiddenTabs() },
                     modifier = Modifier.fillMaxSize()
                 )
 
-                // Bug fix: this sheet previously only existed inside the
-                // browsing Scaffold further down, which the `return` below
-                // skips entirely while on the Home Screen. Tapping the
-                // dashboard row above flipped showPrivacyDashboard to true,
-                // but nothing was composed to react to it. Rendered here
-                // too so the dashboard is reachable from both screens.
+                // Rendered on the home screen too, because that branch returns before the browsing Scaffold below.
                 PrivacyDashboardSheet(
                     isVisible = showPrivacyDashboard,
                     trackersBlockedCount = trackersBlockedCount,
@@ -283,7 +329,8 @@ class MainActivity : ComponentActivity() {
         Scaffold(
             modifier = Modifier
                 .fillMaxSize()
-                .background(Color(0xFF0D0E15))
+                .background(Color(0xFF0D0E15)),
+            snackbarHost = { SnackbarHost(snackbarHostState) }
         ) { innerPadding ->
             Box(
                 modifier = Modifier
@@ -305,18 +352,15 @@ class MainActivity : ComponentActivity() {
                             onToggleBookmark = {
                                 if (isActiveTabBookmarked) {
                                     viewModel.removeBookmark(currentUrl)
-                                } else {
-                                    viewModel.addBookmark(currentUrl, webViewRef?.title ?: currentUrl)
+                                } else if (!viewModel.addBookmark(currentUrl, webViewRef?.title ?: currentUrl)) {
+                                    Toast.makeText(
+                                        context,
+                                        "Bookmarks aren't saved from incognito or hidden tabs",
+                                        Toast.LENGTH_SHORT
+                                    ).show()
                                 }
                             },
-                            onOpenExternally = {
-                                try {
-                                    val chooser = Intent.createChooser(Intent(Intent.ACTION_VIEW, Uri.parse(currentUrl)), "Open with")
-                                    startActivity(chooser)
-                                } catch (e: Exception) {
-                                    Toast.makeText(context, "No browser app available to open this", Toast.LENGTH_SHORT).show()
-                                }
-                            },
+                            onOpenExternally = { openUrlExternally(currentUrl) },
                             onToggleAlwaysExternal = {
                                 viewModel.toggleAlwaysExternalForCurrentUrl()
                                 Toast.makeText(
@@ -340,7 +384,7 @@ class MainActivity : ComponentActivity() {
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .height(3.dp),
-                            color = CineRed,
+                            color = ObsidianRed,
                             trackColor = Color.Transparent
                         )
                     }
@@ -349,9 +393,8 @@ class MainActivity : ComponentActivity() {
                     OfflineBanner(
                         isOffline = isBannerOffline && !isOffline,
                         onRetry = {
-                            if (networkObserver.checkInitialConnection()) {
+                            if (networkObserver.isOnlineNow()) {
                                 viewModel.refreshPage()
-                                webViewRef?.reload()
                             } else {
                                 Toast.makeText(context, "Still offline. Retrying connection...", Toast.LENGTH_SHORT).show()
                             }
@@ -361,16 +404,12 @@ class MainActivity : ComponentActivity() {
                         }
                     )
 
-                    // (VPN status is now enforced via the full-screen
-                    // VpnRequiredOverlay below instead of a small banner.)
-
                     // Pull-to-refresh Wrapper
                     PullToRefreshBox(
                         isRefreshing = isRefreshing,
                         onRefresh = {
                             if (isOnline) {
                                 viewModel.refreshPage()
-                                webViewRef?.reload()
                             } else {
                                 viewModel.onRefreshHandled()
                                 Toast.makeText(context, "Cannot refresh: Device is offline", Toast.LENGTH_SHORT).show()
@@ -381,23 +420,22 @@ class MainActivity : ComponentActivity() {
                         // Main WebView View
                         AppWebView(
                             urlToLoad = currentUrl,
+                            navRequest = navRequest,
                             isOnline = isOnline,
                             isRefreshing = isRefreshing,
+                            networkBlocked = networkBlocked,
                             allowedDomain = allowedDomain,
                             shieldOff = activeTabIsShieldOff,
-                            onPageStarted = { url ->
-                                viewModel.onPageStarted(url)
-                            },
-                            onProgressChanged = { progress ->
-                                viewModel.onProgressChanged(progress)
-                            },
-                            onPageFinished = { url, canBack ->
-                                viewModel.onPageFinished(url, canBack)
+                            isIncognito = activeTabIsIncognito,
+                            onNavRequestHandled = { viewModel.onNavRequestHandled() },
+                            onPageStarted = { url -> viewModel.onPageStarted(url) },
+                            onUrlChanged = { url -> viewModel.onUrlChanged(url) },
+                            onProgressChanged = { progress -> viewModel.onProgressChanged(progress) },
+                            onPageFinished = { url, _ ->
+                                viewModel.onPageFinished(url)
                                 viewModel.updateActiveTabMeta(url, webViewRef?.title ?: "")
                             },
-                            onError = { errorMsg ->
-                                viewModel.onWebError(errorMsg)
-                            },
+                            onError = { errorMsg -> viewModel.onWebError(errorMsg) },
                             onShowFileChooser = { callback, params ->
                                 filePathCallback?.onReceiveValue(null)
                                 filePathCallback = callback
@@ -420,24 +458,8 @@ class MainActivity : ComponentActivity() {
                                 }
                                 true
                             },
-                            onPermissionRequest = { request ->
-                                pendingPermissionRequest = request
-                                val requestedResources = request.resources
-                                val permissionsToRequest = mutableListOf<String>()
-
-                                if (requestedResources.contains(PermissionRequest.RESOURCE_VIDEO_CAPTURE)) {
-                                    permissionsToRequest.add(Manifest.permission.CAMERA)
-                                }
-                                if (requestedResources.contains(PermissionRequest.RESOURCE_AUDIO_CAPTURE)) {
-                                    permissionsToRequest.add(Manifest.permission.RECORD_AUDIO)
-                                }
-
-                                if (permissionsToRequest.isNotEmpty()) {
-                                    requestPermissionLauncher.launch(permissionsToRequest.toTypedArray())
-                                } else {
-                                    request.grant(requestedResources)
-                                }
-                            },
+                            onPermissionRequest = { request -> handleWebPermissionRequest(request) },
+                            onPermissionRequestCanceled = { request -> cancelWebPermissionRequest(request) },
                             onShowCustomView = { view, callback ->
                                 customView = view
                                 customViewCallback = callback
@@ -448,27 +470,26 @@ class MainActivity : ComponentActivity() {
                                 hideCustomView()
                                 isCustomViewShowing = false
                             },
-                            onWebViewCreated = { webView ->
-                                webViewRef = webView
+                            onWebViewChanged = { webView -> webViewRef = webView },
+                            onDownloadRequested = { url, fileName, mimeType, userAgent, cookie, contentLength ->
+                                confirmDownload(PendingDownload(url, fileName, mimeType, userAgent, cookie, contentLength))
                             },
-                            onDownloadRequested = { url, fileName, mimeType, userAgent, cookie ->
-                                viewModel.startDownload(url, fileName, mimeType, userAgent, cookie)
-                            },
-                            onTrackerBlocked = { host -> viewModel.onTrackerBlocked(host) },
+                            onTrackerBlocked = { host, category -> viewModel.onTrackerBlocked(host, category) },
+                            onNavigationBlocked = { url -> viewModel.onNavigationBlocked(url) },
                             shouldOpenExternally = { host -> viewModel.shouldOpenExternally(host) },
                             modifier = Modifier.fillMaxSize()
                         )
                     }
                 }
 
-                // Browsing is paused while Proton VPN isn't detected as
-                // active — covers the toolbar + page content, but doesn't
-                // stop the fullscreen-video container below it.
-                if (!protonVpnActive) {
+                // Browsing is stopped while Proton VPN isn't detected as active. The WebView itself is also
+                // paused and its traffic is black-holed (see NetworkPolicyManager), so this is a real
+                // kill-switch and not just something drawn on top of a page that keeps loading.
+                if (networkBlocked) {
                     VpnRequiredOverlay(
-                        isProtonVpnInstalled = viewModel.isProtonVpnInstalled(),
+                        isProtonVpnInstalled = protonInstalled,
                         onOpenProtonVpn = {
-                            val protonPackage = com.example.weblite.vpn.VpnStatusMonitor.PROTON_VPN_PACKAGE
+                            val protonPackage = VpnStatusMonitor.PROTON_VPN_PACKAGE
                             val launchIntent = packageManager.getLaunchIntentForPackage(protonPackage)
                             if (launchIntent != null) {
                                 startActivity(launchIntent)
@@ -502,7 +523,7 @@ class MainActivity : ComponentActivity() {
                 if (!showSplashScreen && !isCustomViewShowing) {
                     FloatingActionButton(
                         onClick = { viewModel.toggleDownloadsSheet(true) },
-                        containerColor = CineRed,
+                        containerColor = ObsidianRed,
                         contentColor = Color.White,
                         modifier = Modifier
                             .align(Alignment.BottomEnd)
@@ -520,9 +541,8 @@ class MainActivity : ComponentActivity() {
                     isVisible = isOffline,
                     errorMessage = errorMessage,
                     onRetry = {
-                        if (networkObserver.checkInitialConnection()) {
+                        if (networkObserver.isOnlineNow()) {
                             viewModel.refreshPage()
-                            webViewRef?.reload()
                         } else {
                             Toast.makeText(context, "Still offline. Please check connection.", Toast.LENGTH_SHORT).show()
                         }
@@ -538,13 +558,17 @@ class MainActivity : ComponentActivity() {
                     isVisible = showDownloadsSheet,
                     downloads = downloads,
                     onDismiss = { viewModel.toggleDownloadsSheet(false) },
-                    onDelete = { item -> viewModel.deleteDownload(item) },
-                    onRetry = { item -> viewModel.retryDownload(item) }
+                    onDelete = { item, deleteFile -> viewModel.deleteDownload(item, deleteFile) },
+                    onRetry = { item ->
+                        viewModel.retryDownload(item) { success, message ->
+                            if (!success) {
+                                Toast.makeText(context, message ?: "Couldn't restart the download", Toast.LENGTH_LONG).show()
+                            }
+                        }
+                    }
                 )
 
                 // Privacy Dashboard - proof of what's actually being blocked.
-                // Also rendered in the showHomeScreen branch above, since
-                // that branch returns before ever reaching this Scaffold.
                 PrivacyDashboardSheet(
                     isVisible = showPrivacyDashboard,
                     trackersBlockedCount = trackersBlockedCount,
@@ -556,6 +580,165 @@ class MainActivity : ComponentActivity() {
             }
         }
     }
+
+    // ---- helpers -------------------------------------------------------------------------------
+
+    private fun openUrlExternally(url: String) {
+        try {
+            val chooser = Intent.createChooser(Intent(Intent.ACTION_VIEW, Uri.parse(url)), "Open with")
+            startActivity(chooser)
+        } catch (e: Exception) {
+            Toast.makeText(this, "No browser app available to open this", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    private fun hasPermission(permission: String): Boolean =
+        checkSelfPermission(permission) == PackageManager.PERMISSION_GRANTED
+
+    // ---- camera / microphone: the user decides per request ----------------------------------------
+
+    private fun handleWebPermissionRequest(request: PermissionRequest) {
+        // One request at a time; a second one is refused instead of silently replacing the first.
+        if (pendingPermissionRequest != null) {
+            request.deny()
+            return
+        }
+
+        val wantsCamera = request.resources.contains(PermissionRequest.RESOURCE_VIDEO_CAPTURE)
+        val wantsMic = request.resources.contains(PermissionRequest.RESOURCE_AUDIO_CAPTURE)
+        val wantsDrm = request.resources.contains(PermissionRequest.RESOURCE_PROTECTED_MEDIA_ID)
+
+        if (!wantsCamera && !wantsMic) {
+            // Protected-media (DRM) playback needs no access to any device; everything else (MIDI...) is refused.
+            if (wantsDrm) {
+                request.grant(arrayOf(PermissionRequest.RESOURCE_PROTECTED_MEDIA_ID))
+            } else {
+                request.deny()
+            }
+            return
+        }
+
+        pendingPermissionRequest = request
+        val host = request.origin?.host ?: "This site"
+        val what = when {
+            wantsCamera && wantsMic -> "camera and microphone"
+            wantsCamera -> "camera"
+            else -> "microphone"
+        }
+        permissionDialog?.dismiss()
+        permissionDialog = AlertDialog.Builder(this)
+            .setTitle("Allow $what?")
+            .setMessage("$host wants to use your $what.")
+            .setPositiveButton("Allow") { _, _ -> continuePermissionRequest(request) }
+            .setNegativeButton("Block") { _, _ -> finishPermissionRequest(request, grant = false) }
+            .setOnCancelListener { finishPermissionRequest(request, grant = false) }
+            .show()
+    }
+
+    private fun continuePermissionRequest(request: PermissionRequest) {
+        val needed = mutableListOf<String>()
+        if (request.resources.contains(PermissionRequest.RESOURCE_VIDEO_CAPTURE) &&
+            !hasPermission(Manifest.permission.CAMERA)
+        ) {
+            needed.add(Manifest.permission.CAMERA)
+        }
+        if (request.resources.contains(PermissionRequest.RESOURCE_AUDIO_CAPTURE) &&
+            !hasPermission(Manifest.permission.RECORD_AUDIO)
+        ) {
+            needed.add(Manifest.permission.RECORD_AUDIO)
+        }
+        if (needed.isEmpty()) {
+            finishPermissionRequest(request, grant = true)
+        } else {
+            requestPermissionLauncher.launch(needed.toTypedArray())
+        }
+    }
+
+    private fun finishPermissionRequest(request: PermissionRequest, grant: Boolean) {
+        if (pendingPermissionRequest !== request) return // already answered or cancelled
+        pendingPermissionRequest = null
+        if (!grant) {
+            request.deny()
+            return
+        }
+        val allowed = mutableListOf<String>()
+        for (resource in request.resources) {
+            when (resource) {
+                PermissionRequest.RESOURCE_VIDEO_CAPTURE ->
+                    if (hasPermission(Manifest.permission.CAMERA)) allowed.add(resource)
+                PermissionRequest.RESOURCE_AUDIO_CAPTURE ->
+                    if (hasPermission(Manifest.permission.RECORD_AUDIO)) allowed.add(resource)
+                PermissionRequest.RESOURCE_PROTECTED_MEDIA_ID -> allowed.add(resource)
+            }
+        }
+        if (allowed.isEmpty()) request.deny() else request.grant(allowed.toTypedArray())
+    }
+
+    private fun cancelWebPermissionRequest(request: PermissionRequest) {
+        if (pendingPermissionRequest === request) {
+            pendingPermissionRequest = null
+            permissionDialog?.dismiss()
+        }
+    }
+
+    // ---- downloads: always confirmed first ----------------------------------------------------------
+
+    private fun confirmDownload(download: PendingDownload) {
+        if (!download.url.startsWith("https://") && !download.url.startsWith("http://")) {
+            Toast.makeText(this, "This kind of download isn't supported", Toast.LENGTH_LONG).show()
+            return
+        }
+        val blockReason = viewModel.downloadBlockReason()
+        if (blockReason != null) {
+            Toast.makeText(this, blockReason, Toast.LENGTH_LONG).show()
+            return
+        }
+        if (downloadDialog?.isShowing == true) return
+
+        val host = Uri.parse(download.url).host ?: "this site"
+        val size = if (download.contentLength > 0) {
+            Formatter.formatShortFileSize(this, download.contentLength)
+        } else {
+            "unknown size"
+        }
+        val isInstaller = download.fileName.endsWith(".apk", ignoreCase = true) ||
+            download.mimeType == "application/vnd.android.package-archive"
+        val warning = if (isInstaller) {
+            "\n\nThis is an app installer (APK). Only download it if you trust this site."
+        } else {
+            ""
+        }
+        downloadDialog = AlertDialog.Builder(this)
+            .setTitle("Download file?")
+            .setMessage("${download.fileName}\n$size, from $host$warning")
+            .setPositiveButton("Download") { _, _ -> ensureStoragePermissionThen { startDownload(download) } }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
+    /** Android 9 and older need the storage permission to write into the public Downloads folder. */
+    private fun ensureStoragePermissionThen(action: () -> Unit) {
+        if (Build.VERSION.SDK_INT > Build.VERSION_CODES.P || hasPermission(Manifest.permission.WRITE_EXTERNAL_STORAGE)) {
+            action()
+            return
+        }
+        afterStoragePermission = action
+        storagePermissionLauncher.launch(Manifest.permission.WRITE_EXTERNAL_STORAGE)
+    }
+
+    private fun startDownload(download: PendingDownload) {
+        viewModel.startDownload(
+            download.url, download.fileName, download.mimeType, download.userAgent, download.cookie
+        ) { success, message ->
+            if (success) {
+                Toast.makeText(this, "Download started: ${download.fileName}", Toast.LENGTH_SHORT).show()
+            } else {
+                Toast.makeText(this, message ?: "Unable to start the download", Toast.LENGTH_LONG).show()
+            }
+        }
+    }
+
+    // ---- fullscreen video ------------------------------------------------------------------------
 
     private fun showCustomView(view: View) {
         fullscreenContainer?.addView(
@@ -580,6 +763,25 @@ class MainActivity : ComponentActivity() {
         requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
     }
 
+    // ---- lifecycle -------------------------------------------------------------------------------
+
+    override fun onStart() {
+        super.onStart()
+        // Installed apps and the VPN state may have changed while the app was in the background.
+        viewModel.refreshInstalledApps()
+        if (!viewModel.networkBlocked.value) {
+            webViewRef?.onResume()
+            webViewRef?.resumeTimers()
+        }
+    }
+
+    override fun onStop() {
+        super.onStop()
+        // Nothing the page does (timers, scripts, media) should keep running while the app is in the background.
+        webViewRef?.onPause()
+        webViewRef?.pauseTimers()
+    }
+
     override fun onPause() {
         super.onPause()
         // Privacy: relock hidden tabs the moment the app leaves the
@@ -588,22 +790,15 @@ class MainActivity : ComponentActivity() {
     }
 
     override fun onDestroy() {
+        permissionDialog?.dismiss()
+        downloadDialog?.dismiss()
         super.onDestroy()
         networkObserver.unregister()
-        clearBrowsingData()
-        webViewRef = null
-    }
-
-    private fun clearBrowsingData() {
-        // Privacy: wipe cookies, cache, and browsing history so nothing about
-        // what you viewed persists on the device after the app is closed.
-        webViewRef?.apply {
-            clearHistory()
-            clearCache(true)
-            clearFormData()
+        // Only when the app is really being closed. A configuration change also destroys the Activity,
+        // and wiping then would silently log the user out of every site.
+        if (isFinishing) {
+            BrowsingDataWiper.wipeLive(webViewRef)
         }
-        android.webkit.CookieManager.getInstance().removeAllCookies(null)
-        android.webkit.CookieManager.getInstance().flush()
-        android.webkit.WebStorage.getInstance().deleteAllData()
+        webViewRef = null
     }
 }

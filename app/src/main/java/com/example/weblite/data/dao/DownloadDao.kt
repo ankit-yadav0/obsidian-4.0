@@ -13,18 +13,14 @@ interface DownloadDao {
     @Query("SELECT * FROM downloads ORDER BY timestamp DESC")
     fun getAllDownloads(): Flow<List<DownloadItem>>
 
-    @Query("SELECT * FROM downloads WHERE downloadManagerId = :managerId")
-    suspend fun getByDownloadManagerId(managerId: Long): DownloadItem?
-
-    @Query("SELECT * FROM downloads WHERE id = :id")
-    suspend fun getById(id: Long): DownloadItem?
-
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertOrUpdate(download: DownloadItem): Long
 
     @Query("DELETE FROM downloads WHERE id = :id")
     suspend fun deleteById(id: Long)
 
-    @Query("UPDATE downloads SET status = :status, downloadedBytes = :downloadedBytes, totalBytes = :totalBytes, filePath = :filePath WHERE downloadManagerId = :managerId")
+    // COALESCE keeps the previously known path when DownloadManager has no local URI yet
+    // (queued / failed downloads) instead of overwriting it with NULL.
+    @Query("UPDATE downloads SET status = :status, downloadedBytes = :downloadedBytes, totalBytes = :totalBytes, filePath = COALESCE(:filePath, filePath) WHERE downloadManagerId = :managerId")
     suspend fun updateProgress(managerId: Long, status: Int, downloadedBytes: Long, totalBytes: Long, filePath: String?)
 }

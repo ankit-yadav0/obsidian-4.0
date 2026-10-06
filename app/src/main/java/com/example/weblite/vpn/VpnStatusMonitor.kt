@@ -3,42 +3,87 @@ package com.example.weblite.vpn
 import android.content.Context
 import android.content.pm.PackageManager
 import android.net.ConnectivityManager
+import android.net.Network
 import android.net.NetworkCapabilities
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 
 /**
- * Checks whether Proton VPN is installed and whether a VPN connection is
- * currently active, so the app can show a "connect your VPN" warning.
+ * Tells the app whether the connection it is using goes through a VPN, and whether Proton VPN is
+ * installed. It is event-driven (a network callback), so nothing polls in the background.
  *
- * Important limitation, disclosed here rather than hidden: Android does
- * not expose an API to identify which specific app owns the active VPN
- * tunnel. isProtonVpnActive() therefore combines two separate, weaker
- * signals — "Proton VPN is installed" and "some VPN connection is
- * currently active" — as a best-effort heuristic. If a different VPN app
- * is connected instead, this will still report "active". There's no way
- * to do better than that from a regular (non-VpnService) app on Android.
+ * Limitation, disclosed rather than hidden: Android does not say which app owns the active VPN
+ * tunnel. "Proton VPN installed" + "some VPN is the active network" is therefore a best-effort
+ * heuristic; if a different VPN app is connected it still reports "active".
  */
-class VpnStatusMonitor(private val context: Context) {
+class VpnStatusMonitor(context: Context) {
 
     companion object {
         const val PROTON_VPN_PACKAGE = "ch.protonvpn.android"
     }
 
+    private val appContext = context.applicationContext
+    private val connectivityManager =
+        appContext.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+
+    private val _isVpnActive = MutableStateFlow(readVpnState())
+
+    /** True while the app's default network is a VPN. */
+    val isVpnActive: StateFlow<Boolean> = _isVpnActive.asStateFlow()
+
+    private val callback = object : ConnectivityManager.NetworkCallback() {
+        override fun onCapabilitiesChanged(network: Network, networkCapabilities: NetworkCapabilities) {
+            _isVpnActive.value = networkCapabilities.hasTransport(NetworkCapabilities.TRANSPORT_VPN)
+        }
+
+        override fun onLost(network: Network) {
+            _isVpnActive.value = readVpnState()
+        }
+    }
+
+    private var registered = false
+
+    init {
+        try {
+            connectivityManager.registerDefaultNetworkCallback(callback)
+            registered = true
+        } catch (e: Exception) {
+            // Without callbacks refresh() still works, it just has to be called by the host.
+        }
+    }
+
     fun isProtonVpnInstalled(): Boolean {
         return try {
-            context.packageManager.getPackageInfo(PROTON_VPN_PACKAGE, 0)
+            appContext.packageManager.getPackageInfo(PROTON_VPN_PACKAGE, 0)
             true
         } catch (e: PackageManager.NameNotFoundException) {
             false
         }
     }
 
-    fun isAnyVpnActive(): Boolean {
-        val cm = context.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager ?: return false
-        val network = cm.activeNetwork ?: return false
-        val capabilities = cm.getNetworkCapabilities(network) ?: return false
-        return capabilities.hasTransport(NetworkCapabilities.TRANSPORT_VPN)
+    /** Re-reads the current state (cheap); used when the app returns to the foreground. */
+    fun refresh() {
+        _isVpnActive.value = readVpnState()
     }
 
-    /** Best-effort: see class doc for the exact limitation. */
-    fun isProtonVpnActive(): Boolean = isProtonVpnInstalled() && isAnyVpnActive()
+    fun unregister() {
+        if (!registered) return
+        registered = false
+        try {
+            connectivityManager.unregisterNetworkCallback(callback)
+        } catch (e: Exception) {
+            // Already unregistered
+        }
+    }
+
+    private fun readVpnState(): Boolean {
+        return try {
+            val network = connectivityManager.activeNetwork ?: return false
+            val capabilities = connectivityManager.getNetworkCapabilities(network) ?: return false
+            capabilities.hasTransport(NetworkCapabilities.TRANSPORT_VPN)
+        } catch (e: Exception) {
+            false
+        }
+    }
 }

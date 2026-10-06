@@ -22,10 +22,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import com.example.ui.theme.CineRed
+import com.example.ui.theme.ObsidianRed
 
 /**
  * Pauses browsing entirely until Proton VPN is detected as active. See
@@ -41,7 +42,9 @@ fun VpnRequiredOverlay(
     Box(
         modifier = modifier
             .fillMaxSize()
-            .background(Color(0xFF0A0A12)),
+            .background(Color(0xFF0A0A12))
+            // swallow every touch so nothing reaches the paused page underneath
+            .pointerInput(Unit) {},
         contentAlignment = Alignment.Center
     ) {
         Column(
@@ -53,13 +56,13 @@ fun VpnRequiredOverlay(
                 modifier = Modifier
                     .size(72.dp)
                     .clip(RoundedCornerShape(20.dp))
-                    .background(CineRed.copy(alpha = 0.15f)),
+                    .background(ObsidianRed.copy(alpha = 0.15f)),
                 contentAlignment = Alignment.Center
             ) {
                 Icon(
                     imageVector = Icons.Default.VpnKeyOff,
                     contentDescription = null,
-                    tint = CineRed,
+                    tint = ObsidianRed,
                     modifier = Modifier.size(36.dp)
                 )
             }
@@ -90,7 +93,7 @@ fun VpnRequiredOverlay(
 
             Button(
                 onClick = onOpenProtonVpn,
-                colors = ButtonDefaults.buttonColors(containerColor = CineRed),
+                colors = ButtonDefaults.buttonColors(containerColor = ObsidianRed),
                 shape = RoundedCornerShape(14.dp)
             ) {
                 Text(

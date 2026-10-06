@@ -5,7 +5,8 @@ import android.content.Context
 /**
  * Some sites' Cloudflare (or similar) bot-check fails inside this app's
  * privacy-hardened WebView — specifically, blocking third-party cookies
- * and WebRTC (both done deliberately for privacy, see AppWebView.kt) can
+ * and WebRTC (both done deliberately for privacy, see WebViewSetup.kt and
+ * PrivacyScripts.kt) can
  * make Cloudflare's Turnstile/managed-challenge widget fail to complete,
  * which blocks login on some sites.
  *
@@ -26,7 +27,7 @@ class ExternalHandoffManager(context: Context) {
 
     fun shouldOpenExternally(host: String): Boolean {
         if (host.isBlank()) return false
-        val bare = host.removePrefix("www.")
+        val bare = host.trim().lowercase().removePrefix("www.")
         return alwaysOpenExternally().any { bare == it || bare.endsWith(".$it") }
     }
 

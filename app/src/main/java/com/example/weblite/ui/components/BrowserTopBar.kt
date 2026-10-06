@@ -35,9 +35,14 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
@@ -59,10 +64,21 @@ fun BrowserTopBar(
     modifier: Modifier = Modifier
 ) {
     var isEditing by remember { mutableStateOf(false) }
-    var editText by remember { mutableStateOf(currentUrl) }
+    var editValue by remember { mutableStateOf(TextFieldValue(currentUrl)) }
+    val focusRequester = remember { FocusRequester() }
+    // Focus events arrive once before the field has focus; only a loss AFTER it had focus ends editing.
+    var hadFocus by remember { mutableStateOf(false) }
 
     LaunchedEffect(currentUrl) {
-        if (!isEditing) editText = currentUrl
+        if (!isEditing) editValue = TextFieldValue(currentUrl)
+    }
+
+    // Tapping the address pill now opens the keyboard straight away with the whole URL selected.
+    LaunchedEffect(isEditing) {
+        if (isEditing) {
+            hadFocus = false
+            focusRequester.requestFocus()
+        }
     }
 
     Row(
@@ -92,15 +108,20 @@ fun BrowserTopBar(
 
         if (isEditing) {
             OutlinedTextField(
-                value = editText,
-                onValueChange = { editText = it },
-                modifier = Modifier.weight(1f),
+                value = editValue,
+                onValueChange = { editValue = it },
+                modifier = Modifier
+                    .weight(1f)
+                    .focusRequester(focusRequester)
+                    .onFocusChanged { state ->
+                        if (state.isFocused) hadFocus = true else if (hadFocus) isEditing = false
+                    },
                 singleLine = true,
                 placeholder = { Text("Search or type a URL") },
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri, imeAction = ImeAction.Go),
                 keyboardActions = KeyboardActions(onGo = {
                     isEditing = false
-                    onNavigate(editText)
+                    onNavigate(editValue.text)
                 }),
                 colors = OutlinedTextFieldDefaults.colors(
                     focusedTextColor = Color.White,
@@ -117,7 +138,7 @@ fun BrowserTopBar(
                     .padding(horizontal = 4.dp)
                     .background(Color.White.copy(alpha = 0.08f))
                     .clickable {
-                        editText = currentUrl
+                        editValue = TextFieldValue(currentUrl, TextRange(0, currentUrl.length))
                         isEditing = true
                     }
                     .padding(horizontal = 10.dp, vertical = 8.dp)

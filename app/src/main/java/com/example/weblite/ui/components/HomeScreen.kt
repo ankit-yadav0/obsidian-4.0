@@ -10,6 +10,9 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
@@ -47,8 +50,10 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.weblite.data.PinManager
 import com.example.weblite.viewmodel.BrowserTab
 
 @Composable
@@ -72,7 +77,8 @@ fun HomeScreen(
     onHideTab: (String) -> Unit,
     onUnhideTab: (String) -> Unit,
     onSetPin: (String) -> Unit,
-    onUnlockAttempt: (String) -> Boolean,
+    onUnlockAttempt: (String) -> PinManager.VerifyResult,
+    onForgotPin: () -> Unit,
     onRelock: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -88,10 +94,13 @@ fun HomeScreen(
         modifier = modifier
             .fillMaxSize()
             .background(Color(0xFF0D0E15))
+            .statusBarsPadding()
+            .navigationBarsPadding()
+            .imePadding()
             .padding(24.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        Spacer(Modifier.height(48.dp))
+        Spacer(Modifier.height(24.dp))
 
         Text(
             text = "Obsidian",
@@ -166,13 +175,22 @@ fun HomeScreen(
         Spacer(Modifier.height(8.dp))
 
         TextButton(
-            onClick = { onOpenIncognito(urlText) },
+            onClick = { if (urlText.isNotBlank()) onOpenIncognito(urlText) },
             modifier = Modifier.fillMaxWidth()
         ) {
             Icon(Icons.Default.VisibilityOff, contentDescription = null, modifier = Modifier.size(16.dp), tint = Color.White.copy(alpha = 0.7f))
             Spacer(Modifier.width(6.dp))
             Text("Open in Incognito", color = Color.White.copy(alpha = 0.7f), fontSize = 13.sp)
         }
+        Text(
+            text = "Incognito stops cookies from being saved and clears site data when the tab is closed. " +
+                "Obsidian uses one shared browser profile, so closing an incognito tab also signs you out of your other tabs.",
+            color = Color.White.copy(alpha = 0.4f),
+            fontSize = 11.sp,
+            lineHeight = 14.sp,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.padding(horizontal = 8.dp)
+        )
 
         LazyColumn(
             modifier = Modifier.fillMaxWidth(),
@@ -209,7 +227,7 @@ fun HomeScreen(
                 }
             }
 
-            if (hiddenTabs.isNotEmpty()) {
+            if (isPinSet || hiddenTabs.isNotEmpty()) {
                 item {
                     Spacer(Modifier.height(if (visibleTabs.isNotEmpty()) 16.dp else 0.dp))
                     Row(
@@ -226,7 +244,7 @@ fun HomeScreen(
                         Spacer(Modifier.width(10.dp))
                         Text(
                             text = if (hiddenTabsUnlocked) "Hidden tabs (${hiddenTabs.size}) — tap to lock"
-                            else "Hidden tabs (${hiddenTabs.size}) — enter PIN",
+                            else "Hidden tabs — enter PIN",
                             color = Color.White,
                             fontSize = 14.sp,
                             modifier = Modifier.weight(1f)
@@ -330,9 +348,13 @@ fun HomeScreen(
         UnlockPinDialog(
             onDismiss = { showUnlockDialog = false },
             onSubmit = { pin ->
-                val ok = onUnlockAttempt(pin)
-                if (ok) showUnlockDialog = false
-                ok
+                val result = onUnlockAttempt(pin)
+                if (result is PinManager.VerifyResult.Success) showUnlockDialog = false
+                result
+            },
+            onForgotPin = {
+                showUnlockDialog = false
+                onForgotPin()
             }
         )
     }
@@ -381,7 +403,7 @@ private fun SetPinDialog(onDismiss: () -> Unit, onConfirm: (String) -> Unit) {
         text = {
             Column {
                 Text(
-                    "This PIN protects your hidden tabs. Choose 6 digits you'll remember — it can't be recovered if you forget it.",
+                    "This PIN protects your hidden tabs. Choose 6 digits you'll remember. If you forget it, the only way out is a reset, which permanently closes all hidden tabs.",
                     fontSize = 13.sp
                 )
                 Spacer(Modifier.height(12.dp))
@@ -424,9 +446,14 @@ private fun SetPinDialog(onDismiss: () -> Unit, onConfirm: (String) -> Unit) {
 }
 
 @Composable
-private fun UnlockPinDialog(onDismiss: () -> Unit, onSubmit: (String) -> Boolean) {
+private fun UnlockPinDialog(
+    onDismiss: () -> Unit,
+    onSubmit: (String) -> PinManager.VerifyResult,
+    onForgotPin: () -> Unit
+) {
     var pin by remember { mutableStateOf("") }
     var error by remember { mutableStateOf<String?>(null) }
+    var confirmReset by remember { mutableStateOf(false) }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -445,15 +472,28 @@ private fun UnlockPinDialog(onDismiss: () -> Unit, onSubmit: (String) -> Boolean
                     Spacer(Modifier.height(6.dp))
                     Text(it, color = Color(0xFFE50914), fontSize = 12.sp)
                 }
+                Spacer(Modifier.height(4.dp))
+                TextButton(onClick = { confirmReset = true }) {
+                    Text("Forgot PIN?", fontSize = 12.sp)
+                }
             }
         },
         confirmButton = {
             TextButton(onClick = {
                 if (pin.length != 6) {
                     error = "Enter all 6 digits"
-                } else if (!onSubmit(pin)) {
-                    error = "Incorrect PIN"
-                    pin = ""
+                } else {
+                    when (val result = onSubmit(pin)) {
+                        is PinManager.VerifyResult.Success -> Unit
+                        is PinManager.VerifyResult.Wrong -> {
+                            error = "Incorrect PIN. ${result.attemptsLeft} tries left before a timed lock."
+                            pin = ""
+                        }
+                        is PinManager.VerifyResult.Locked -> {
+                            error = "Too many wrong tries. Try again in ${formatLockTime(result.remainingMs)}."
+                            pin = ""
+                        }
+                    }
                 }
             }) { Text("Unlock") }
         },
@@ -461,4 +501,31 @@ private fun UnlockPinDialog(onDismiss: () -> Unit, onSubmit: (String) -> Boolean
             TextButton(onClick = onDismiss) { Text("Cancel") }
         }
     )
+
+    if (confirmReset) {
+        AlertDialog(
+            onDismissRequest = { confirmReset = false },
+            title = { Text("Reset PIN?") },
+            text = {
+                Text(
+                    "A forgotten PIN can't be recovered. Resetting it permanently closes all hidden tabs and removes the PIN.",
+                    fontSize = 13.sp
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    confirmReset = false
+                    onForgotPin()
+                }) { Text("Reset and close hidden tabs") }
+            },
+            dismissButton = {
+                TextButton(onClick = { confirmReset = false }) { Text("Cancel") }
+            }
+        )
+    }
+}
+
+private fun formatLockTime(ms: Long): String {
+    val seconds = (ms + 999) / 1000
+    return if (seconds >= 60) "${(seconds + 59) / 60} min" else "$seconds s"
 }

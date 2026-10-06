@@ -1,58 +1,66 @@
-# Obsidian - Privacy-Focused Android WebView Browser
+# Obsidian 4.0
 
-Obsidian is a native Android WebView browser built with Kotlin and Jetpack Compose. Enter any URL to open it full screen, with multiple tabs, ad/tracker blocking, and privacy protections built in.
+A privacy-focused Android browser built with Kotlin, Jetpack Compose and a hardened `WebView`.
 
-## Features
+## What it does
 
-- **URL-entry home screen**: type a website and tap Done to open it full screen — no visible URL bar or browser chrome while browsing.
-- **Multiple tabs**: open several sites at once, switch between them from the home screen.
-- **Hidden tabs with a 6-digit PIN**: hide any tab from the tab list; a PIN (stored only as a salted hash, never in plain text) is required to reveal it again. Hidden tabs re-lock automatically when you leave the app or background it.
-- **Ad & tracker blocking**: a broad blocklist of ad networks and analytics/tracking domains is blocked at the network level.
-- **Pop-up blocking**: `window.open`/new-window attempts are blocked outright.
-- **WebRTC IP-leak protection**: blocks `RTCPeerConnection` before any page script runs, closing a common way sites bypass a VPN to discover your real IP.
-- **Privacy hardening**: third-party cookies blocked, no saved form data, Google Safe Browsing telemetry disabled, geolocation requests auto-denied, screenshots/recents-preview blocked (`FLAG_SECURE`), and all cookies/cache/history are wiped when the app closes.
-- **Downloads & offline support**: native `DownloadManager` integration with a Downloads screen, offline banner, and automatic reload when connectivity returns.
+| Area | Behaviour |
+|---|---|
+| **HTTPS-only** | Typed `http://` addresses and `http://` navigations are upgraded to `https://`. Android blocks cleartext traffic anyway, so sites that only speak plain HTTP will not load. |
+| **Site lock** | A page stays inside the site you opened. Same-site links and server redirects work normally, scripted jumps to other sites are blocked, and a link you tap that leads to another site is blocked with an **Open** button so you can follow it on purpose. |
+| **Tracker blocking** | Sub-resource requests to known ad / tracker hosts are blocked (whole host labels only, so `bigsegment.com` is never mistaken for `segment.com`). Blocked scripts get harmless stubs so pages keep working. Per-tab shield switch. |
+| **Hardened WebView** | Third-party cookies off, no `file://` / `content://` access, WebRTC hidden (feature detection simply reports "unsupported"), `Sec-GPC` / `DNT` signals, reduced user agent, canvas / audio noise and WebGL (1 and 2) vendor masking. See *Limits* below. |
+| **Permissions** | Camera and microphone ask you **per request** (site name shown). Location is always denied. Downloads always ask first. |
+| **Hidden tabs** | Protected by a 6-digit PIN stored as PBKDF2-HMAC-SHA256. Five wrong tries lock entry for 30 s, doubling up to 15 min. "Forgot PIN" resets the PIN and closes all hidden tabs. Tabs re-lock whenever the app leaves the foreground. |
+| **Incognito** | Cookies are not saved while an incognito tab is open, and cookies plus site storage are cleared when it closes. Obsidian uses **one shared browser profile**, so closing an incognito tab also signs you out of your other tabs. Incognito and hidden tabs cannot be bookmarked. |
+| **Tor** | Optional routing of the WebView through Orbot (`127.0.0.1:9050`). Android's download manager cannot use Tor, so **downloads are disabled while Tor is on**. |
+| **VPN gate** | Browsing needs Proton VPN to be connected. While it is not, the WebView is stopped and paused and its traffic is black-holed, so nothing leaves over your real connection. Downloads are paused too. |
+| **Nothing survives** | Cookies, storage and cache are wiped when the app is closed **and** again on the next cold start (a killed app never runs its shutdown code). Screenshots and the recents preview are blocked, and cloud backup / device transfer are disabled. |
+| **Privacy dashboard** | Shows what was blocked this session. |
 
-## Prerequisites
+Also: tabs, bookmarks, a downloads manager, offline banner, pull-to-refresh, edge-swipe back/forward, fullscreen video.
 
-- **Android Studio**: recent stable version.
-- **JDK**: 17.
-- **Min SDK**: Android 8.0 (API 24).
+## Requirements
 
-## Configuring your website
+* Android 7.0+ (API 24)
+* To build: JDK 17 and Gradle 9.3.1 (AGP 9.1.1, Kotlin 2.2.10)
 
-There's no fixed target site — you enter any URL from the app's home screen at runtime. No code change is needed to point it at a different site.
+## Build
 
-## Building locally
+```bash
+gradle assembleDebug              # app/build/outputs/apk/debug/app-debug.apk
+gradle testDebugUnitTest          # JVM unit tests (URL rules, blocklist, PIN hashing) + Robolectric
+```
 
-1. Open the project root in Android Studio and let it sync.
-2. Build a debug APK:
-   ```bash
-   gradle :app:assembleDebug
-   ```
-   Build a release APK:
-   ```bash
-   gradle :app:assembleRelease
-   ```
-3. Run unit tests:
-   ```bash
-   gradle :app:testDebugUnitTest
-   ```
+A **release** build needs a signing key: set `KEYSTORE_PATH` (default `my-upload-key.jks` in the repo root),
+`STORE_PASSWORD` and `KEY_PASSWORD`, then run `gradle assembleRelease`. Without them the release task fails
+with "Keystore file not found" by design.
 
-This project doesn't include a Gradle wrapper (`gradlew`), so use a system-installed `gradle` (as above), or in Android Studio just click **Run**/**Build** — it uses its own bundled Gradle automatically.
+On GitHub Actions the workflow caches `~/.android/debug.keystore`, so every CI APK is signed with the same
+debug key and a new build installs over the old one (you no longer have to uninstall first).
 
-## Building an APK from GitHub (no local setup needed)
+## Limits you should know about
 
-A workflow at `.github/workflows/build-apk.yml` builds a debug APK automatically on every push, and can also be triggered manually.
+* **Fingerprint protection is best effort.** The noise is imperceptible by design, so a tracker that rounds
+  pixel values can still see through it. Obsidian is not Tor Browser: even over Tor its WebView fingerprint is
+  its own, not a uniform one.
+* **The VPN gate cannot see which app owns the tunnel.** It checks "Proton VPN installed" and "the active
+  network is a VPN". For a guaranteed kill-switch also turn on Android's *Always-on VPN* +
+  *Block connections without VPN* for Proton.
+* **Safe Browsing is off** (so no URL prefix is sent to Google). The price: no built-in phishing warning page.
+* **Default search engine is Google** (`UrlUtils.SEARCH_URL`). Change that one constant to use another engine.
+* The YouTube ad skipper depends on YouTube's page markup and may stop working whenever YouTube changes it.
+* Android 9 and older ask for the storage permission the first time you download a file.
 
-1. Push this project to a GitHub repository.
-2. In the repo, go to the **Actions** tab.
-3. If it doesn't start automatically, select **Build APK** → **Run workflow**.
-4. Once it finishes (green check), open the run → scroll to **Artifacts** → download `obsidian-debug-apk`.
-5. Unzip it — that's your installable `.apk`. Transfer it to your phone and install it (you'll need to allow "install from unknown sources" for whichever app you use to open it).
+## Layout
 
-Note: this builds a **debug APK**, which is fine for installing on your own device but isn't signed for the Play Store. If you need a signed release build, that requires a signing keystore — ask and it can be added to the workflow as a secret.
-
-## Key configuration
-
-- **Application ID**: `com.example.weblite`
+```
+app/src/main/java/com/example/
+  MainActivity.kt                 window flags, permission / download dialogs, lifecycle, wiring
+  weblite/viewmodel/              MainViewModel: tabs, navigation requests, network policy, counters
+  weblite/webview/                WebView setup, navigation policy, blocking, injected privacy script
+  weblite/util/                   pure-Kotlin rules (URL handling, blocklist, PIN hashing) with unit tests
+  weblite/network, vpn, privacy/  proxy / Tor policy, connectivity, VPN state, wipe, external hand-off
+  weblite/data/                   Room database, PIN storage, downloads repository
+  weblite/ui/components/          Compose screens and sheets
+```

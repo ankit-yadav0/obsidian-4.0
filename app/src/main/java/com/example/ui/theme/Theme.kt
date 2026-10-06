@@ -12,10 +12,10 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 
 private val DarkColorScheme = darkColorScheme(
-    primary = CineRed,
+    primary = ObsidianRed,
     onPrimary = Color.White,
-    primaryContainer = CineRedDark,
-    secondary = CineGold,
+    primaryContainer = ObsidianRedDark,
+    secondary = ObsidianGold,
     background = DarkBackground,
     surface = DarkSurface,
     surfaceVariant = DarkSurfaceVariant,
@@ -24,10 +24,10 @@ private val DarkColorScheme = darkColorScheme(
 )
 
 private val LightColorScheme = lightColorScheme(
-    primary = CineRed,
+    primary = ObsidianRed,
     onPrimary = Color.White,
-    primaryContainer = CineRedDark,
-    secondary = CineGold,
+    primaryContainer = ObsidianRedDark,
+    secondary = ObsidianGold,
     background = LightBackground,
     surface = LightSurface,
     surfaceVariant = LightSurfaceVariant,

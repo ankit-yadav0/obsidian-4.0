@@ -4,7 +4,6 @@ import android.content.Context
 import android.net.ConnectivityManager
 import android.net.Network
 import android.net.NetworkCapabilities
-import android.net.NetworkRequest
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -14,40 +13,37 @@ class NetworkObserver(context: Context) {
     private val connectivityManager =
         context.applicationContext.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
 
-    private val _isOnline = MutableStateFlow(checkInitialConnection())
+    private val _isOnline = MutableStateFlow(isOnlineNow())
     val isOnline: StateFlow<Boolean> = _isOnline.asStateFlow()
 
+    // Follows only the app's default network, so a second network (for example mobile data) that
+    // comes and goes while Wi-Fi is up cannot flip the state.
     private val networkCallback = object : ConnectivityManager.NetworkCallback() {
         override fun onAvailable(network: Network) {
-            _isOnline.value = true
+            _isOnline.value = isOnlineNow()
         }
 
         override fun onLost(network: Network) {
-            _isOnline.value = checkInitialConnection()
+            _isOnline.value = isOnlineNow()
         }
 
-        override fun onCapabilitiesChanged(
-            network: Network,
-            networkCapabilities: NetworkCapabilities
-        ) {
-            val hasCapability = networkCapabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
-            _isOnline.value = hasCapability
+        override fun onCapabilitiesChanged(network: Network, networkCapabilities: NetworkCapabilities) {
+            _isOnline.value = networkCapabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
         }
     }
+
+    private var registered = false
 
     init {
-        val request = NetworkRequest.Builder()
-            .addCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
-            .build()
         try {
-            connectivityManager.registerNetworkCallback(request, networkCallback)
+            connectivityManager.registerDefaultNetworkCallback(networkCallback)
+            registered = true
         } catch (e: Exception) {
-            // Fallback for edge runtime environments
-            _isOnline.value = checkInitialConnection()
+            _isOnline.value = isOnlineNow()
         }
     }
 
-    fun checkInitialConnection(): Boolean {
+    fun isOnlineNow(): Boolean {
         return try {
             val activeNetwork = connectivityManager.activeNetwork ?: return false
             val capabilities = connectivityManager.getNetworkCapabilities(activeNetwork) ?: return false
@@ -58,6 +54,8 @@ class NetworkObserver(context: Context) {
     }
 
     fun unregister() {
+        if (!registered) return
+        registered = false
         try {
             connectivityManager.unregisterNetworkCallback(networkCallback)
         } catch (e: Exception) {

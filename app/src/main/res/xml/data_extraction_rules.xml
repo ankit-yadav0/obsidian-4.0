@@ -1,15 +1,22 @@
-<?xml version="1.0" encoding="utf-8"?><!--
-   Sample data extraction rules file; uncomment and customize as necessary.
-   See https://developer.android.com/about/versions/12/backup-restore#xml-changes
-   for details.
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Obsidian never lets app data leave the device: no cloud backup and no device-to-device transfer of
+  cookies, WebView storage, the PIN hash, bookmarks or download history.
+  (android:allowBackup is also false in the manifest; these rules cover Android 12+ transfers.)
 -->
 <data-extraction-rules>
     <cloud-backup>
-        <!-- Privacy: never let the PIN hash or WebView browsing data
-             (cookies, cache, form data) leave the device via cloud backup.
-             Download history in the Room database is not sensitive and is
-             still backed up normally. -->
-        <exclude domain="sharedpref" path="weblite_pin_prefs.xml" />
+        <exclude domain="root" path="." />
         <exclude domain="file" path="." />
+        <exclude domain="database" path="." />
+        <exclude domain="sharedpref" path="." />
+        <exclude domain="external" path="." />
     </cloud-backup>
+    <device-transfer>
+        <exclude domain="root" path="." />
+        <exclude domain="file" path="." />
+        <exclude domain="database" path="." />
+        <exclude domain="sharedpref" path="." />
+        <exclude domain="external" path="." />
+    </device-transfer>
 </data-extraction-rules>

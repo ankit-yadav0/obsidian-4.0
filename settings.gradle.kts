@@ -22,6 +22,6 @@ dependencyResolutionManagement {
   }
 }
 
-rootProject.name = "CineHD"
+rootProject.name = "Obsidian"
 
 include(":app")

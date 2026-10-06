@@ -31,8 +31,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.example.ui.theme.CineGold
-import com.example.ui.theme.CineRed
+import com.example.ui.theme.ObsidianGold
+import com.example.ui.theme.ObsidianRed
 
 @Composable
 fun OfflineBanner(
@@ -70,13 +70,13 @@ fun OfflineBanner(
                         modifier = Modifier
                             .size(28.dp)
                             .clip(RoundedCornerShape(8.dp))
-                            .background(CineRed.copy(alpha = 0.2f)),
+                            .background(ObsidianRed.copy(alpha = 0.2f)),
                         contentAlignment = Alignment.Center
                     ) {
                         Icon(
                             imageVector = Icons.Default.WifiOff,
                             contentDescription = "Offline",
-                            tint = CineRed,
+                            tint = ObsidianRed,
                             modifier = Modifier.size(16.dp)
                         )
                     }
@@ -97,7 +97,7 @@ fun OfflineBanner(
                             style = MaterialTheme.typography.bodySmall.copy(
                                 fontSize = 11.sp
                             ),
-                            color = CineGold
+                            color = ObsidianGold
                         )
                     }
                 }
@@ -106,7 +106,7 @@ fun OfflineBanner(
                     verticalAlignment = Alignment.CenterVertically,
                     modifier = Modifier
                         .clip(RoundedCornerShape(8.dp))
-                        .background(CineRed)
+                        .background(ObsidianRed)
                         .clickable { onRetry() }
                         .padding(horizontal = 10.dp, vertical = 6.dp)
                 ) {

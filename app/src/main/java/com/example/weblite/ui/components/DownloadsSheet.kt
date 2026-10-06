@@ -36,6 +36,7 @@ import androidx.compose.material.icons.filled.Movie
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.OpenInNew
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -48,10 +49,12 @@ import androidx.compose.material3.SecondaryTabRow
 import androidx.compose.material3.Tab
 import androidx.compose.material3.TabRowDefaults
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -65,8 +68,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.FileProvider
 import com.example.weblite.data.model.DownloadItem
-import com.example.ui.theme.CineGold
-import com.example.ui.theme.CineRed
+import com.example.ui.theme.ObsidianGold
+import com.example.ui.theme.ObsidianRed
 import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -78,7 +81,7 @@ fun DownloadsSheet(
     isVisible: Boolean,
     downloads: List<DownloadItem>,
     onDismiss: () -> Unit,
-    onDelete: (DownloadItem) -> Unit,
+    onDelete: (item: DownloadItem, deleteFile: Boolean) -> Unit,
     onRetry: (DownloadItem) -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -88,12 +91,18 @@ fun DownloadsSheet(
     val context = LocalContext.current
 
     var selectedTabIndex by remember { mutableIntStateOf(0) }
+    var pendingDelete by remember { mutableStateOf<DownloadItem?>(null) }
     val tabs = listOf("All", "Completed", "Downloading")
 
     val filteredDownloads = remember(downloads, selectedTabIndex) {
         when (selectedTabIndex) {
             1 -> downloads.filter { it.status == DownloadManager.STATUS_SUCCESSFUL }
-            2 -> downloads.filter { it.status != DownloadManager.STATUS_SUCCESSFUL }
+            // "Downloading" means in progress; failed downloads are only listed under "All".
+            2 -> downloads.filter {
+                it.status == DownloadManager.STATUS_PENDING ||
+                    it.status == DownloadManager.STATUS_RUNNING ||
+                    it.status == DownloadManager.STATUS_PAUSED
+            }
             else -> downloads
         }
     }
@@ -134,13 +143,13 @@ fun DownloadsSheet(
                         modifier = Modifier
                             .size(36.dp)
                             .clip(RoundedCornerShape(10.dp))
-                            .background(CineRed.copy(alpha = 0.2f)),
+                            .background(ObsidianRed.copy(alpha = 0.2f)),
                         contentAlignment = Alignment.Center
                     ) {
                         Icon(
                             imageVector = Icons.Default.Download,
                             contentDescription = "Downloads",
-                            tint = CineRed,
+                            tint = ObsidianRed,
                             modifier = Modifier.size(20.dp)
                         )
                     }
@@ -170,11 +179,11 @@ fun DownloadsSheet(
             SecondaryTabRow(
                 selectedTabIndex = selectedTabIndex,
                 containerColor = Color.Transparent,
-                contentColor = CineRed,
+                contentColor = ObsidianRed,
                 indicator = {
                     TabRowDefaults.SecondaryIndicator(
                         modifier = Modifier.tabIndicatorOffset(selectedTabIndex),
-                        color = CineRed,
+                        color = ObsidianRed,
                         height = 3.dp
                     )
                 }
@@ -189,7 +198,7 @@ fun DownloadsSheet(
                                 style = MaterialTheme.typography.labelLarge.copy(
                                     fontWeight = if (selectedTabIndex == index) FontWeight.Bold else FontWeight.Normal
                                 ),
-                                color = if (selectedTabIndex == index) CineRed else Color.Gray
+                                color = if (selectedTabIndex == index) ObsidianRed else Color.Gray
                             )
                         }
                     )
@@ -236,13 +245,49 @@ fun DownloadsSheet(
                         DownloadItemCard(
                             item = item,
                             onOpen = { openDownloadedFile(context, item) },
-                            onDelete = { onDelete(item) },
+                            onDelete = { pendingDelete = item },
                             onRetry = { onRetry(item) }
                         )
                     }
                 }
             }
         }
+    }
+
+    // Deleting used to remove the downloaded file from storage with a single tap and no confirmation.
+    pendingDelete?.let { item ->
+        val completed = item.status == DownloadManager.STATUS_SUCCESSFUL
+        AlertDialog(
+            onDismissRequest = { pendingDelete = null },
+            title = { Text("Remove download?") },
+            text = {
+                Text(
+                    if (completed) {
+                        "${item.fileName}\n\nDelete the file from your device, or only remove it from this list?"
+                    } else {
+                        "${item.fileName}\n\nThis cancels the download and removes it from the list."
+                    },
+                    fontSize = 13.sp
+                )
+            },
+            confirmButton = {
+                Row {
+                    if (completed) {
+                        TextButton(onClick = {
+                            onDelete(item, false)
+                            pendingDelete = null
+                        }) { Text("Remove from list") }
+                    }
+                    TextButton(onClick = {
+                        onDelete(item, true)
+                        pendingDelete = null
+                    }) { Text(if (completed) "Delete file" else "Remove") }
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { pendingDelete = null }) { Text("Cancel") }
+            }
+        )
     }
 }
 
@@ -279,9 +324,9 @@ private fun DownloadItemCard(
                         .clip(RoundedCornerShape(12.dp))
                         .background(
                             when {
-                                isCompleted -> CineRed.copy(alpha = 0.2f)
+                                isCompleted -> ObsidianRed.copy(alpha = 0.2f)
                                 isFailed -> Color.Red.copy(alpha = 0.15f)
-                                else -> CineGold.copy(alpha = 0.15f)
+                                else -> ObsidianGold.copy(alpha = 0.15f)
                             }
                         ),
                     contentAlignment = Alignment.Center
@@ -294,9 +339,9 @@ private fun DownloadItemCard(
                         },
                         contentDescription = null,
                         tint = when {
-                            isCompleted -> CineRed
+                            isCompleted -> ObsidianRed
                             isFailed -> Color.Red
-                            else -> CineGold
+                            else -> ObsidianGold
                         },
                         modifier = Modifier.size(24.dp)
                     )
@@ -336,7 +381,7 @@ private fun DownloadItemCard(
                             Icon(
                                 imageVector = Icons.Default.OpenInNew,
                                 contentDescription = "Open File",
-                                tint = CineGold
+                                tint = ObsidianGold
                             )
                         }
                     } else if (isFailed) {
@@ -344,7 +389,7 @@ private fun DownloadItemCard(
                             Icon(
                                 imageVector = Icons.Default.Refresh,
                                 contentDescription = "Retry",
-                                tint = CineGold
+                                tint = ObsidianGold
                             )
                         }
                     }
@@ -374,14 +419,14 @@ private fun DownloadItemCard(
                             .weight(1f)
                             .height(4.dp)
                             .clip(CircleShape),
-                        color = CineRed,
+                        color = ObsidianRed,
                         trackColor = Color.Gray.copy(alpha = 0.2f)
                     )
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
                         text = "${(progress * 100).toInt()}%",
                         style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
-                        color = CineGold
+                        color = ObsidianGold
                     )
                 }
             }

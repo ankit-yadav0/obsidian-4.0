@@ -30,6 +30,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
@@ -37,7 +38,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.R
-import com.example.ui.theme.CineRed
+import com.example.ui.theme.ObsidianRed
 
 @Composable
 fun OfflineErrorView(
@@ -57,6 +58,8 @@ fun OfflineErrorView(
             modifier = Modifier
                 .fillMaxSize()
                 .background(Color(0xFF0D0E15))
+                // swallow every touch so nothing reaches the page underneath
+                .pointerInput(Unit) {}
                 .padding(24.dp),
             contentAlignment = Alignment.Center
         ) {
@@ -97,13 +100,13 @@ fun OfflineErrorView(
                         modifier = Modifier
                             .size(48.dp)
                             .clip(RoundedCornerShape(12.dp))
-                            .background(CineRed.copy(alpha = 0.15f)),
+                            .background(ObsidianRed.copy(alpha = 0.15f)),
                         contentAlignment = Alignment.Center
                     ) {
                         Icon(
                             imageVector = Icons.Default.WifiOff,
                             contentDescription = null,
-                            tint = CineRed,
+                            tint = ObsidianRed,
                             modifier = Modifier.size(28.dp)
                         )
                     }
@@ -136,7 +139,7 @@ fun OfflineErrorView(
                     Button(
                         onClick = onRetry,
                         colors = ButtonDefaults.buttonColors(
-                            containerColor = CineRed,
+                            containerColor = ObsidianRed,
                             contentColor = Color.White
                         ),
                         shape = RoundedCornerShape(12.dp),
