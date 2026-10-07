@@ -21,10 +21,17 @@ jobs:
           distribution: temurin
           java-version: "17"
 
-      # Installs/updates the Android SDK components this project needs,
-      # and accepts the SDK licenses.
+      # Accepts the SDK licenses; AGP then downloads the platform / build-tools it needs by itself.
+      #
+      # Why @v4 and `packages: ''`: @v3 installs Google's old "tools" package by default, and Google no longer
+      # serves it, so every run died right here with "Failed to find package 'tools'" before Gradle even
+      # started (nothing to do with the app's code). @v4 dropped "tools" from its defaults, and the empty
+      # `packages` skips installing any extra package at all: this build does not need platform-tools (adb),
+      # so there is nothing left in this step that a removed SDK package could break again.
       - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
+        uses: android-actions/setup-android@v4
+        with:
+          packages: ''
 
       # No committed Gradle wrapper needed - this downloads and caches a
       # pinned Gradle distribution instead of relying on ./gradlew.
@@ -43,6 +50,15 @@ jobs:
         with:
           gradle-version: "9.3.1"
 
+      # A fresh GitHub runner has no ~/.android/debug.keystore, so every run would generate a brand-new
+      # random debug key, and Android refuses to install an APK over one signed with a different key
+      # (you had to uninstall first, losing your PIN and bookmarks). Caching the key keeps it stable.
+      - name: Restore debug signing key
+        uses: actions/cache@v4
+        with:
+          path: ~/.android/debug.keystore
+          key: debug-keystore-v1
+
       - name: Build debug APK
         run: gradle assembleDebug --no-daemon --stacktrace
 
@@ -52,3 +68,7 @@ jobs:
           name: obsidian-debug-apk
           path: app/build/outputs/apk/debug/*.apk
           if-no-files-found: error
+
+      # Runs after the APK has been uploaded, so a failing test can never stop you from getting the APK.
+      - name: Run unit tests
+        run: gradle testDebugUnitTest --no-daemon --stacktrace
