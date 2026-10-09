@@ -9,7 +9,7 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 
 @RunWith(RobolectricTestRunner::class)
-@Config(sdk = [36])
+@Config(sdk = [35]) // Robolectric's SDK 36 needs Java 21; CI runs Java 17
 class ExampleRobolectricTest {
 
   @Test
